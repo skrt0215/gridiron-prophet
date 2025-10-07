@@ -1,8 +1,22 @@
 import sys
 import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import os
 from dotenv import load_dotenv
-load_dotenv('config/.env')
+from pathlib import Path
+
+# Debug: Print current directory and .env path
+print(f"Current directory: {os.getcwd()}")
+env_path = Path(__file__).parent.parent / 'config' / '.env'
+print(f".env file path: {env_path}")
+print(f".env exists: {env_path.exists()}")
+
+load_dotenv(env_path)
+
+# Debug: Print what was loaded
+print(f"SPORTSDATA_API_KEY loaded: {os.getenv('SPORTSDATA_API_KEY')}")
+print(f"DB_HOST loaded: {os.getenv('DB_HOST')}")
+print("-" * 50)
 from database.db_manager import DatabaseManager
 import requests
 from bs4 import BeautifulSoup

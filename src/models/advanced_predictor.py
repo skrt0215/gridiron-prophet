@@ -218,7 +218,7 @@ class AdvancedNFLPredictor:
         print(f"Training set: {len(X_train)} games")
         print(f"Test set: {len(X_test)} games")
         
-        # Train Gradient Boosting model (generally better than Random Forest)
+        # Train Gradient Boosting model
         print("\nTraining Gradient Boosting model...")
         self.model = GradientBoostingClassifier(
             n_estimators=200,

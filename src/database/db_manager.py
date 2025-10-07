@@ -66,8 +66,7 @@ class DatabaseManager:
             INSERT INTO teams (name, abbreviation, city, conference, division, stadium, head_coach)
             VALUES (%s, %s, %s, %s, %s, %s, %s)
         """
-        return self.execute_insert(query, (name, abbreviation, city, conference, 
-                                           division, stadium, head_coach))
+        return self.execute_insert(query, (name, abbreviation, city, conference, division, stadium, head_coach))
     
     def get_team_by_abbreviation(self, abbreviation):
         """Get team details by abbreviation"""
@@ -90,8 +89,7 @@ class DatabaseManager:
                                weight, age, college, years_in_league, status)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """
-        return self.execute_insert(query, (name, team_id, position, jersey_number,
-                                           height, weight, age, college, 
+        return self.execute_insert(query, (name, team_id, position, jersey_number, height, weight, age, college, 
                                            years_in_league, status))
     
     def get_players_by_team(self, team_id):
@@ -118,11 +116,8 @@ class DatabaseManager:
                              is_dome, game_status)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """
-        return self.execute_insert(query, (season, week, game_date, game_time,
-                                           home_team_id, away_team_id, home_score,
-                                           away_score, stadium, weather_temp,
-                                           weather_wind, weather_conditions,
-                                           is_dome, game_status))
+        return self.execute_insert(query, (season, week, game_date, game_time, home_team_id, away_team_id, home_score,
+        away_score, stadium, weather_temp, weather_wind, weather_conditions,is_dome, game_status))
     
     def get_games_by_week(self, season, week):
         """Get all games for a specific week"""

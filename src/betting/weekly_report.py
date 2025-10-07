@@ -137,7 +137,7 @@ def main():
     # Save to file
     generator.save_report(report)
     
-    print("\n💡 TIP: Set up a cron job to run this automatically every Tuesday")
+    print("\n💡 note: Set up a cron job to run this automatically every Tuesday")
 
 if __name__ == "__main__":
     main()

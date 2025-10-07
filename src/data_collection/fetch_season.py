@@ -63,9 +63,29 @@ def fetch_multiple_weeks(season, start_week, end_week):
         print(f"  Week {game['week']}: {game['game_count']} games ({game['completed_games']} completed)")
 
 if __name__ == "__main__":
-    # Fetch Weeks 1-5 of 2025 season
-    fetch_multiple_weeks(
-        season=2025,
-        start_week=1,
-        end_week=5
-    )
+    # Fetch multiple seasons
+    # 2022, 2023, 2024, and 2025 (current)
+    
+    seasons_to_fetch = [
+        (2022, 1, 18),  # (season, start_week, end_week)
+        (2023, 1, 18),
+        (2024, 1, 18),
+    ]
+    
+    print("=" * 70)
+    print("FETCHING MULTIPLE NFL SEASONS")
+    print("=" * 70)
+    
+    for season, start_week, end_week in seasons_to_fetch:
+        print(f"\n\n{'#' * 70}")
+        print(f"# STARTING SEASON {season}")
+        print(f"{'#' * 70}\n")
+        
+        fetch_multiple_weeks(season, start_week, end_week)
+        
+        # Wait between seasons
+        time.sleep(2)
+    
+    print("\n\n" + "=" * 70)
+    print("ALL SEASONS COMPLETE!")
+    print("=" * 70)
