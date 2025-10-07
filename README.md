@@ -21,11 +21,16 @@ A machine learning system that analyzes NFL games to predict outcomes, player pe
 - Jupyter (exploration)
 
 ## Roadmap
-- [ ] Set up data collection pipeline
-- [ ] Collect historical NFL game data
+- [x] Set up project structure and database schema
+- [x] Create database connection and management system
+- [x] Populate database with NFL teams
+- [ ] Build data collection pipeline for historical games
+- [ ] Fetch current season game data and stats
+- [ ] Implement injury tracking system
+- [ ] Add depth chart data collection
+- [ ] Integrate betting odds APIs
 - [ ] Build initial prediction models
-- [ ] Player performance tracking
-- [ ] Create visualization dashboard
-- [ ] Integrate live odds APIs
-- [ ] Backtesting framework
+- [ ] Create player performance analytics
+- [ ] Develop visualization dashboard
+- [ ] Backtesting framework for model validation
 - [ ] Real-time prediction system
