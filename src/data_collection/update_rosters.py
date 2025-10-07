@@ -146,8 +146,8 @@ class RosterUpdater:
         if not self.clear_old_rosters():
             return
         
-        # Import fresh rosters
-        self.import_rosters(seasons=[2025])
+        # Import fresh rosters (2024 + 2025 to track team changes)
+        self.import_rosters(seasons=[2024, 2025])
         
         # Verify
         self.verify_rosters()
