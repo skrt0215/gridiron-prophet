@@ -255,4 +255,4 @@ if __name__ == "__main__":
     
     # Example matchup analysis
     print("\n\n")
-    analyzer.compare_matchup_injuries('KC', 'BUF')
+    analyzer.compare_matchup_injuries('DEN', 'NYJ')
