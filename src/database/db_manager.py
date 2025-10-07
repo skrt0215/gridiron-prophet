@@ -104,6 +104,16 @@ class DatabaseManager:
         return self.execute_query(query, (team_id,))
     
     # Game Operations
+    def game_exists(self, season, week, home_team_id, away_team_id):
+        """Check if a game already exists"""
+        query = """
+            SELECT game_id FROM games 
+            WHERE season = %s AND week = %s 
+            AND home_team_id = %s AND away_team_id = %s
+        """
+        result = self.execute_query(query, (season, week, home_team_id, away_team_id))
+        return result[0]['game_id'] if result else None
+    
     def add_game(self, season, week, game_date, home_team_id, away_team_id,
                  game_time=None, home_score=None, away_score=None, stadium=None,
                  weather_temp=None, weather_wind=None, weather_conditions=None,
@@ -117,7 +127,50 @@ class DatabaseManager:
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """
         return self.execute_insert(query, (season, week, game_date, game_time, home_team_id, away_team_id, home_score,
-        away_score, stadium, weather_temp, weather_wind, weather_conditions,is_dome, game_status))
+        away_score, stadium, weather_temp, weather_wind, weather_conditions, is_dome, game_status))
+    
+    def add_game_safe(self, season, week, game_date, home_team_id, away_team_id,
+                 game_time=None, home_score=None, away_score=None, stadium=None,
+                 weather_temp=None, weather_wind=None, weather_conditions=None,
+                 is_dome=False, game_status='Scheduled'):
+        """Add a game only if it doesn't exist, otherwise update it"""
+        existing_game_id = self.game_exists(season, week, home_team_id, away_team_id)
+        
+        if existing_game_id:
+            # Update existing game instead of inserting duplicate
+            query = """
+                UPDATE games SET 
+                    game_date = %s, game_time = %s, home_score = %s, away_score = %s,
+                    stadium = %s, weather_temp = %s, weather_wind = %s, 
+                    weather_conditions = %s, is_dome = %s, game_status = %s
+                WHERE game_id = %s
+            """
+            self.execute_update(query, (game_date, game_time, home_score, away_score,
+                                        stadium, weather_temp, weather_wind, 
+                                        weather_conditions, is_dome, game_status,
+                                        existing_game_id))
+            return existing_game_id
+        else:
+            # Insert new game
+            return self.add_game(season, week, game_date, home_team_id, away_team_id,
+                               game_time, home_score, away_score, stadium,
+                               weather_temp, weather_wind, weather_conditions,
+                               is_dome, game_status)
+    
+    def clear_duplicates(self):
+        """Remove duplicate games, keeping the most recent entry"""
+        query = """
+            DELETE g1 FROM games g1
+            INNER JOIN games g2 
+            WHERE g1.game_id < g2.game_id
+            AND g1.season = g2.season
+            AND g1.week = g2.week
+            AND g1.home_team_id = g2.home_team_id
+            AND g1.away_team_id = g2.away_team_id
+        """
+        rows_deleted = self.execute_update(query)
+        print(f"Removed {rows_deleted} duplicate games")
+        return rows_deleted
     
     def get_games_by_week(self, season, week):
         """Get all games for a specific week"""
@@ -194,5 +247,10 @@ if __name__ == "__main__":
     try:
         teams = db.get_all_teams()
         print(f"Database connected successfully! Found {len(teams)} teams.")
+        
+        # Clean up any duplicates
+        print("\nChecking for duplicate games...")
+        db.clear_duplicates()
+        
     except Exception as e:
         print(f"Database connection failed: {e}")

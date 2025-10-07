@@ -127,7 +127,7 @@ class NFLGameFetcher:
         
         for game in games:
             try:
-                game_id = self.db.add_game(**game)
+                game_id = self.db.add_game_safe(**game)
                 home_team = self.db.get_team_by_abbreviation(
                     self.db.execute_query(
                         "SELECT abbreviation FROM teams WHERE team_id = %s",
