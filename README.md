@@ -24,8 +24,8 @@ A machine learning system that analyzes NFL games to predict outcomes, player pe
 - [x] Set up project structure and database schema
 - [x] Create database connection and management system
 - [x] Populate database with NFL teams
-- [ ] Build data collection pipeline for historical games
-- [ ] Fetch current season game data and stats
+- [x] Build data collection pipeline for historical games
+- [x] Fetch current season game data and stats
 - [ ] Implement injury tracking system
 - [ ] Add depth chart data collection
 - [ ] Integrate betting odds APIs
