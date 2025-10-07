@@ -225,7 +225,7 @@ class InjuryFetcher:
     
     def _get_current_week(self):
         """Determine current NFL week (simplified)"""
-        # This is a simplified version - you'd want to calculate based on current date
+        # This is a simplified version
         return 6
     
     def generate_injury_report(self):
@@ -298,9 +298,6 @@ class InjuryFetcher:
         
         # Fetch live current injuries
         self.fetch_live_injuries_espn()
-        
-        # Optionally fetch historical for pattern analysis
-        # self.fetch_historical_injuries(2024)
         
         # Generate report
         self.generate_injury_report()
