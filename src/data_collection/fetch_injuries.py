@@ -91,9 +91,9 @@ class InjuryFetcher:
             print(f"Error fetching live injuries: {e}")
     
     def _store_injury(self, injury_data, source='unknown'):
-        """Store injury data in database"""
+        """Store injury data in database with player matching and updates"""
         try:
-            # Get or create player
+            # Get team
             team = self.db.get_team_by_abbreviation(injury_data.get('team', ''))
             
             if not team:
@@ -101,17 +101,110 @@ class InjuryFetcher:
                 return
             
             team_id = team['team_id']
+            player_name = injury_data.get('full_name', '')
+            position = injury_data.get('position', '')
             
-            # For now, we'll store injuries linked to team
-            # In a full implementation, you'd link to player_id
-            print(f"  • {injury_data.get('full_name', 'Unknown')} ({injury_data.get('position', '?')}) - "
-                  f"{injury_data.get('report_primary_injury', 'Injury')} - {injury_data.get('report_status', 'Status')}")
+            # Get or create player
+            player_id = self._get_or_create_player(player_name, team_id, position)
             
-            # TODO: Link to actual player records and store in injuries table
-            # This requires enhancing the player lookup system
+            if not player_id:
+                print(f"  ⚠ Could not create player: {player_name}")
+                return
+            
+            # Check injury status
+            status = injury_data.get('report_status', '')
+            
+            # If player is healthy/reactivated, update existing injury to resolved
+            if status.lower() in ['active', 'healthy', 'cleared']:
+                self._mark_injury_resolved(player_id)
+                print(f"  ✓ {player_name} ({position}) - CLEARED/ACTIVATED")
+                return
+            
+            # Check if injury already exists for this player
+            existing_injury = self._get_active_injury(player_id)
+            
+            injury_body_part = injury_data.get('report_primary_injury', 'Unspecified')
+            practice_status = injury_data.get('practice_status', status)
+            date_reported = injury_data.get('date_modified', datetime.now())
+            
+            if existing_injury:
+                # Update existing injury
+                self.db.execute_update("""
+                    UPDATE injuries 
+                    SET injury_status = %s,
+                        body_part = %s,
+                        practice_status = %s,
+                        notes = %s,
+                        date_reported = %s
+                    WHERE injury_id = %s
+                """, (status, injury_body_part, practice_status, f'Source: {source}', 
+                      date_reported, existing_injury['injury_id']))
+                
+                print(f"  ↻ {player_name} ({position}) - {injury_body_part} - {status} [UPDATED]")
+            else:
+                # Create new injury record
+                self.db.add_injury(
+                    player_id=player_id,
+                    injury_status=status,
+                    body_part=injury_body_part,
+                    date_reported=date_reported,
+                    practice_status=practice_status,
+                    notes=f'Source: {source}'
+                )
+                
+                print(f"  ✓ {player_name} ({position}) - {injury_body_part} - {status} [NEW]")
             
         except Exception as e:
-            print(f"Error storing injury: {e}")
+            print(f"Error storing injury for {injury_data.get('full_name', 'Unknown')}: {e}")
+            import traceback
+            traceback.print_exc()
+    
+    def _get_or_create_player(self, player_name, team_id, position):
+        """Get existing player or create new one"""
+        # Try to find existing player
+        query = """
+            SELECT player_id FROM players 
+            WHERE name = %s AND team_id = %s
+        """
+        result = self.db.execute_query(query, (player_name, team_id))
+        
+        if result:
+            return result[0]['player_id']
+        
+        # Create new player if not found
+        try:
+            player_id = self.db.add_player(
+                name=player_name,
+                team_id=team_id,
+                position=position,
+                status='Active'
+            )
+            return player_id
+        except Exception as e:
+            print(f"Error creating player {player_name}: {e}")
+            return None
+    
+    def _get_active_injury(self, player_id):
+        """Get active injury for a player"""
+        query = """
+            SELECT injury_id FROM injuries 
+            WHERE player_id = %s 
+            AND injury_status IN ('Out', 'Doubtful', 'Questionable', 'Injured Reserve')
+            ORDER BY date_reported DESC
+            LIMIT 1
+        """
+        result = self.db.execute_query(query, (player_id,))
+        return result[0] if result else None
+    
+    def _mark_injury_resolved(self, player_id):
+        """Mark all active injuries as resolved when player is cleared"""
+        self.db.execute_update("""
+            UPDATE injuries 
+            SET injury_status = 'Resolved',
+                practice_status = 'Full Participation in Practice'
+            WHERE player_id = %s 
+            AND injury_status IN ('Out', 'Doubtful', 'Questionable', 'Injured Reserve')
+        """, (player_id,))
     
     def _get_team_abbreviation(self, team_name):
         """Convert full team name to abbreviation"""
@@ -136,20 +229,66 @@ class InjuryFetcher:
         return 6
     
     def generate_injury_report(self):
-        """Generate a summary of current injuries by team"""
+        """Generate a summary of current injuries by team, sorted by most recent"""
         print("\n" + "="*60)
-        print("INJURY IMPACT ANALYSIS")
+        print("CURRENT INJURY REPORT (Most Recent First)")
         print("="*60)
         
-        # This would query your database for current injuries
-        # and calculate impact scores for each team
+        # Get all active injuries ordered by date (newest first)
+        query = """
+            SELECT i.*, p.name as player_name, p.position, t.name as team_name, t.abbreviation as team_abbr
+            FROM injuries i
+            JOIN players p ON i.player_id = p.player_id
+            LEFT JOIN teams t ON p.team_id = t.team_id
+            WHERE i.injury_status IN ('Out', 'Doubtful', 'Questionable', 'Injured Reserve')
+            ORDER BY i.date_reported DESC
+        """
         
-        print("\nKey Injuries to Watch:")
-        print("• Implement impact scoring based on player position and status")
-        print("• Weight QB injuries higher than other positions")
-        print("• Consider practice participation levels")
+        injuries = self.db.execute_query(query)
         
-        # TODO: Implement full injury impact analysis
+        if not injuries:
+            print("\n✓ No active injuries found in database")
+            return
+        
+        print(f"\nTotal Active Injuries: {len(injuries)}\n")
+        
+        # Group by status for summary
+        status_counts = {}
+        qb_injuries = []
+        
+        for injury in injuries:
+            status = injury['injury_status']
+            status_counts[status] = status_counts.get(status, 0) + 1
+            
+            # Track QB injuries separately
+            if injury['position'] == 'QB':
+                qb_injuries.append(injury)
+        
+        # Show summary
+        print("Status Breakdown:")
+        for status, count in sorted(status_counts.items(), key=lambda x: x[1], reverse=True):
+            print(f"  • {status}: {count} players")
+        
+        # Highlight QB injuries
+        if qb_injuries:
+            print(f"\n⚠️  CRITICAL: {len(qb_injuries)} Quarterback(s) Injured:")
+            for qb in qb_injuries:
+                print(f"  • {qb['player_name']} ({qb['team_abbr']}) - {qb['injury_status']}")
+        
+        # Show all injuries (most recent first)
+        print("\n" + "-"*60)
+        print("ALL ACTIVE INJURIES (Most Recent First):")
+        print("-"*60)
+        
+        for idx, injury in enumerate(injuries[:50], 1):  # Show first 50
+            date_str = injury['date_reported'].strftime('%Y-%m-%d') if injury['date_reported'] else 'Unknown'
+            print(f"{idx}. [{date_str}] {injury['player_name']} ({injury['team_abbr']}, {injury['position']}) - "
+                  f"{injury['body_part'] or 'Injury'} - {injury['injury_status']}")
+        
+        if len(injuries) > 50:
+            print(f"\n... and {len(injuries) - 50} more injuries")
+        
+        print("\n" + "="*60)
     
     def run_full_update(self):
         """Run complete injury data update"""
