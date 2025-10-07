@@ -1,0 +1,41 @@
+======================================================================
+GRIDIRON PROPHET - WEEKLY BETTING REPORT
+Week 6, 2025 Season
+Generated: 2025-10-07 01:10
+======================================================================
+
+📊 WEEK 6 OVERVIEW
+   Total Games: 15
+   Betting Opportunities: 15
+
+🔥 TOP BETTING OPPORTUNITIES
+
+1. Cincinnati Bengals @ Green Bay Packers
+   Vegas: -14.6 | Model: +9.2
+   Edge: +23.8 points | Confidence: HIGH
+   💰 BET: Green Bay Packers to cover
+
+2. San Francisco 49ers @ Tampa Bay Buccaneers
+   Vegas: -3.0 | Model: +14.7
+   Edge: +17.7 points | Confidence: HIGH
+   💰 BET: Tampa Bay Buccaneers to cover
+
+3. Cleveland Browns @ Pittsburgh Steelers
+   Vegas: -4.9 | Model: +8.8
+   Edge: +13.7 points | Confidence: HIGH
+   💰 BET: Pittsburgh Steelers to cover
+
+4. Tennessee Titans @ Las Vegas Raiders
+   Vegas: -4.8 | Model: +8.1
+   Edge: +12.9 points | Confidence: HIGH
+   💰 BET: Las Vegas Raiders to cover
+
+5. Chicago Bears @ Washington Commanders
+   Vegas: -4.5 | Model: +6.4
+   Edge: +10.9 points | Confidence: HIGH
+   💰 BET: Washington Commanders to cover
+
+
+======================================================================
+Track results after games at: python3 src/betting/update_results.py
+======================================================================
