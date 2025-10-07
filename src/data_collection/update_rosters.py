@@ -147,7 +147,7 @@ class RosterUpdater:
             return
         
         # Import fresh rosters
-        self.import_rosters(seasons=[2024])
+        self.import_rosters(seasons=[2025])
         
         # Verify
         self.verify_rosters()
