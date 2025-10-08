@@ -140,7 +140,7 @@ class InjuryImpactAnalyzer:
             injury_details.append(injury_info)
             
             # Flag critical injuries (QB or high impact score)
-            if injury['position'] == 'QB' or impact >= 7.0:
+            if injury['position'] == 'QB' or impact >= 4.0:  # Lower threshold
                 critical_injuries.append(injury_info)
         
         # Sort injuries by impact
