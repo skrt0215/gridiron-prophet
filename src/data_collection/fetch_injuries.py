@@ -8,28 +8,14 @@ import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from database.db_manager import DatabaseManager
 
-class InjuryFetcher:
-    """Fetch and store NFL injury data from multiple sources"""
+class InjuryFetcherV2:
+    """Fetch and store NFL injury data - V2 schema compatible"""
     
     def __init__(self):
         self.db = DatabaseManager()
         self.current_season = 2025
+        self.current_week = 6
         
-    def fetch_historical_injuries(self, season):
-        print(f"\nFetching historical injuries for {season}...")
-        
-        try:
-            injuries_df = nfl.import_injuries([season])
-            print(f"Found {len(injuries_df)} injury records")
-            
-            for _, injury in injuries_df.iterrows():
-                self._store_injury(injury, source='nfl_data_py')
-            
-            print(f"✓ Processed {len(injuries_df)} injury records")
-            
-        except Exception as e:
-            print(f"Error fetching historical injuries: {e}")
-    
     def fetch_live_injuries_espn(self):
         print(f"\nFetching live injuries from ESPN...")
         
@@ -60,22 +46,21 @@ class InjuryFetcher:
                         if len(cols) >= 4:
                             player_name = cols[0].text.strip()
                             position = cols[1].text.strip()
-                            injury = cols[2].text.strip()
+                            body_part = cols[2].text.strip()
                             status = cols[3].text.strip()
                             
                             injury_data = {
                                 'team': team_abbr,
                                 'full_name': player_name,
                                 'position': position,
-                                'report_primary_injury': injury,
-                                'report_status': status,
-                                'practice_status': status,
-                                'date_modified': datetime.now(),
+                                'body_part': body_part,
+                                'status': status,
+                                'date_reported': datetime.now().date(),
                                 'season': self.current_season,
-                                'week': self._get_current_week()
+                                'week': self.current_week
                             }
                             
-                            self._store_injury(injury_data, source='espn_live')
+                            self._store_injury(injury_data)
                             injury_count += 1
             
             print(f"✓ Processed {injury_count} live injury reports")
@@ -83,7 +68,7 @@ class InjuryFetcher:
         except Exception as e:
             print(f"Error fetching live injuries: {e}")
     
-    def _store_injury(self, injury_data, source='unknown'):
+    def _store_injury(self, injury_data):
         try:
             team = self.db.get_team_by_abbreviation(injury_data.get('team', ''))
             
@@ -100,18 +85,19 @@ class InjuryFetcher:
             if not player_id:
                 return
             
-            status = injury_data.get('report_status', '')
+            status = injury_data.get('status', '')
             
             if status.lower() in ['active', 'healthy', 'cleared']:
                 self._mark_injury_resolved(player_id)
                 print(f"  ✓ {player_name} ({position}) - CLEARED/ACTIVATED")
                 return
             
-            existing_injury = self._get_active_injury(player_id)
+            existing_injury = self._get_active_injury(player_id, self.current_season)
             
-            injury_body_part = injury_data.get('report_primary_injury', 'Unspecified')
-            practice_status = injury_data.get('practice_status', status)
-            date_reported = injury_data.get('date_modified', datetime.now())
+            body_part = injury_data.get('body_part', 'Unspecified')
+            date_reported = injury_data.get('date_reported', datetime.now().date())
+            season = injury_data.get('season', self.current_season)
+            week = injury_data.get('week', self.current_week)
             
             if existing_injury:
                 self.db.execute_update("""
@@ -119,47 +105,60 @@ class InjuryFetcher:
                     SET injury_status = %s,
                         body_part = %s,
                         practice_status = %s,
-                        notes = %s,
+                        week = %s,
                         date_reported = %s
                     WHERE injury_id = %s
-                """, (status, injury_body_part, practice_status, f'Source: {source}', 
-                      date_reported, existing_injury['injury_id']))
+                """, (status, body_part, status, week, date_reported, existing_injury['injury_id']))
                 
-                print(f"  ↻ {player_name} ({position}) - {injury_body_part} - {status} [UPDATED]")
+                print(f"  ↻ {player_name} ({position}) - {body_part} - {status} [UPDATED]")
             else:
-                self.db.add_injury(
-                    player_id=player_id,
-                    injury_status=status,
-                    body_part=injury_body_part,
-                    date_reported=date_reported,
-                    practice_status=practice_status,
-                    notes=f'Source: {source}'
-                )
+                self.db.execute_insert("""
+                    INSERT INTO injuries
+                    (player_id, season, week, injury_status, body_part, 
+                     date_reported, practice_status, notes)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                """, (player_id, season, week, status, body_part, 
+                      date_reported, status, 'Source: espn_live'))
                 
-                print(f"  ✓ {player_name} ({position}) - {injury_body_part} - {status} [NEW]")
+                print(f"  ✓ {player_name} ({position}) - {body_part} - {status} [NEW]")
             
         except Exception as e:
             print(f"Error storing injury for {injury_data.get('full_name', 'Unknown')}: {e}")
     
     def _get_or_create_player(self, player_name, team_id, position):
-        query = "SELECT player_id FROM players WHERE name = %s AND team_id = %s"
-        result = self.db.execute_query(query, (player_name, team_id))
+        """Get or create player in V2 schema"""
+        query = """
+            SELECT p.player_id 
+            FROM players p
+            JOIN player_seasons ps ON p.player_id = ps.player_id
+            WHERE p.name = %s 
+            AND ps.team_id = %s 
+            AND ps.season = %s
+        """
+        result = self.db.execute_query(query, (player_name, team_id, self.current_season))
         
         if result:
             return result[0]['player_id']
         
         query = """
-            SELECT player_id, name, position 
-            FROM players 
-            WHERE name = %s AND position = %s
+            SELECT p.player_id 
+            FROM players p
+            WHERE p.name = %s AND p.position = %s
         """
         result = self.db.execute_query(query, (player_name, position))
         
         if result:
             return result[0]['player_id']
         
-        query = "SELECT player_id, name FROM players WHERE team_id = %s AND position = %s"
-        result = self.db.execute_query(query, (team_id, position))
+        query = """
+            SELECT p.player_id, p.name 
+            FROM players p
+            JOIN player_seasons ps ON p.player_id = ps.player_id
+            WHERE ps.team_id = %s 
+            AND ps.season = %s
+            AND p.position = %s
+        """
+        result = self.db.execute_query(query, (team_id, self.current_season, position))
         
         if result:
             player_name_clean = player_name.lower().replace("'", "").replace(".", "").replace("-", "").replace(" jr", "").replace(" sr", "").replace(" ii", "").replace(" iii", "").strip()
@@ -171,23 +170,29 @@ class InjuryFetcher:
                     return player['player_id']
         
         print(f"  → Creating new player: {player_name} ({position}) for team_id {team_id}")
-        player_id = self.db.add_player(
-            name=player_name,
-            team_id=team_id,
-            position=position,
-            status='Active'
+        
+        player_id = self.db.execute_insert(
+            "INSERT INTO players (name, position) VALUES (%s, %s)",
+            (player_name, position)
         )
+        
+        self.db.execute_insert("""
+            INSERT INTO player_seasons (player_id, season, team_id, position, status)
+            VALUES (%s, %s, %s, %s, %s)
+        """, (player_id, self.current_season, team_id, position, 'Active'))
+        
         return player_id
     
-    def _get_active_injury(self, player_id):
+    def _get_active_injury(self, player_id, season):
         query = """
             SELECT injury_id FROM injuries 
             WHERE player_id = %s 
+            AND season = %s
             AND injury_status IN ('Out', 'Doubtful', 'Questionable', 'Injured Reserve')
             ORDER BY date_reported DESC
             LIMIT 1
         """
-        result = self.db.execute_query(query, (player_id,))
+        result = self.db.execute_query(query, (player_id, season))
         return result[0] if result else None
     
     def _mark_injury_resolved(self, player_id):
@@ -196,8 +201,9 @@ class InjuryFetcher:
             SET injury_status = 'Resolved',
                 practice_status = 'Full Participation in Practice'
             WHERE player_id = %s 
+            AND season = %s
             AND injury_status IN ('Out', 'Doubtful', 'Questionable', 'Injured Reserve')
-        """, (player_id,))
+        """, (player_id, self.current_season))
     
     def _get_team_abbreviation(self, team_name):
         team_map = {
@@ -215,24 +221,24 @@ class InjuryFetcher:
         }
         return team_map.get(team_name, team_name[:3].upper())
     
-    def _get_current_week(self):
-        return 6
-    
     def generate_injury_report(self):
         print("\n" + "="*60)
         print("CURRENT INJURY REPORT (Most Recent First)")
         print("="*60)
         
         query = """
-            SELECT i.*, p.name as player_name, p.position, t.name as team_name, t.abbreviation as team_abbr
+            SELECT i.*, p.name as player_name, p.position, 
+                   t.name as team_name, t.abbreviation as team_abbr
             FROM injuries i
             JOIN players p ON i.player_id = p.player_id
-            LEFT JOIN teams t ON p.team_id = t.team_id
+            JOIN player_seasons ps ON p.player_id = ps.player_id AND i.season = ps.season
+            JOIN teams t ON ps.team_id = t.team_id
             WHERE i.injury_status IN ('Out', 'Doubtful', 'Questionable', 'Injured Reserve')
+            AND i.season = %s
             ORDER BY i.date_reported DESC
         """
         
-        injuries = self.db.execute_query(query)
+        injuries = self.db.execute_query(query, (self.current_season,))
         
         if not injuries:
             print("\n✓ No active injuries found in database")
@@ -265,8 +271,9 @@ class InjuryFetcher:
         
         for idx, injury in enumerate(injuries[:50], 1):
             date_str = injury['date_reported'].strftime('%Y-%m-%d') if injury['date_reported'] else 'Unknown'
+            body_part = injury['body_part'] if injury['body_part'] else 'Injury'
             print(f"{idx}. [{date_str}] {injury['player_name']} ({injury['team_abbr']}, {injury['position']}) - "
-                  f"{injury['body_part'] or 'Injury'} - {injury['injury_status']}")
+                  f"{body_part} - {injury['injury_status']}")
         
         if len(injuries) > 50:
             print(f"\n... and {len(injuries) - 50} more injuries")
@@ -275,7 +282,7 @@ class InjuryFetcher:
     
     def run_full_update(self):
         print("="*60)
-        print("NFL INJURY DATA UPDATER")
+        print("NFL INJURY DATA UPDATER - V2")
         print("="*60)
         
         self.fetch_live_injuries_espn()
@@ -284,5 +291,5 @@ class InjuryFetcher:
         print("\n✓ Injury data update complete!")
 
 if __name__ == "__main__":
-    fetcher = InjuryFetcher()
+    fetcher = InjuryFetcherV2()
     fetcher.run_full_update()

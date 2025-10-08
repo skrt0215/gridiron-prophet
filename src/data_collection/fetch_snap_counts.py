@@ -4,11 +4,10 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import nfl_data_py as nfl
 from database.db_manager import DatabaseManager
-import pandas as pd
 
 def fetch_snap_counts(seasons):
     """
-    Fetch snap count data for NFL players
+    Fetch snap count data for NFL players - V2 schema compatible
     
     Args:
         seasons: List of seasons to fetch (e.g., [2022, 2023, 2024])
@@ -16,7 +15,7 @@ def fetch_snap_counts(seasons):
     db = DatabaseManager()
     
     print("=" * 70)
-    print("FETCHING SNAP COUNT DATA")
+    print("FETCHING SNAP COUNT DATA - V2")
     print("=" * 70)
     
     print("\nDownloading snap count data from nfl_data_py...")
@@ -26,28 +25,48 @@ def fetch_snap_counts(seasons):
     
     updated_count = 0
     added_to_depth = 0
+    skipped_count = 0
     
     for idx, row in snap_data.iterrows():
         try:
-            # Get player
-            player = db.execute_query(
-                "SELECT player_id FROM players WHERE name = %s LIMIT 1",
-                (row['player'],)
-            )
+            player_name = row['player']
+            team_abbr = row['team']
+            position = row['position']
+            season = int(row['season'])
+            week = int(row['week'])
             
-            if not player:
-                continue
-            
-            player_id = player[0]['player_id']
-            
-            # Get team
-            team = db.get_team_by_abbreviation(row['team'])
+            team = db.get_team_by_abbreviation(team_abbr)
             if not team:
+                skipped_count += 1
                 continue
             
             team_id = team['team_id']
             
-            # Calculate snap percentage
+            player = db.execute_query("""
+                SELECT p.player_id 
+                FROM players p
+                JOIN player_seasons ps ON p.player_id = ps.player_id
+                WHERE p.name = %s 
+                AND ps.team_id = %s 
+                AND ps.season = %s
+                AND p.position = %s
+                LIMIT 1
+            """, (player_name, team_id, season, position))
+            
+            if not player:
+                player = db.execute_query("""
+                    SELECT player_id 
+                    FROM players 
+                    WHERE name = %s AND position = %s
+                    LIMIT 1
+                """, (player_name, position))
+            
+            if not player:
+                skipped_count += 1
+                continue
+            
+            player_id = player[0]['player_id']
+            
             offense_snaps = row.get('offense_snaps', 0) or 0
             defense_snaps = row.get('defense_snaps', 0) or 0
             st_snaps = row.get('st_snaps', 0) or 0
@@ -55,15 +74,8 @@ def fetch_snap_counts(seasons):
             offense_pct = row.get('offense_pct', 0) or 0
             defense_pct = row.get('defense_pct', 0) or 0
             
-            # Determine primary snap percentage
             snap_percentage = max(offense_pct, defense_pct)
             
-            # Update or insert depth chart entry
-            season = int(row['season'])
-            week = int(row['week'])
-            position = row['position']
-            
-            # Check if depth chart entry exists
             existing = db.execute_query("""
                 SELECT depth_chart_id FROM depth_charts
                 WHERE team_id = %s AND player_id = %s 
@@ -71,38 +83,44 @@ def fetch_snap_counts(seasons):
             """, (team_id, player_id, position, season, week))
             
             if existing:
-                # Update existing entry
                 db.execute_update("""
                     UPDATE depth_charts
-                    SET snap_percentage = %s
+                    SET snap_percentage = %s,
+                        offense_snaps = %s,
+                        defense_snaps = %s,
+                        special_teams_snaps = %s
                     WHERE depth_chart_id = %s
-                """, (snap_percentage, existing[0]['depth_chart_id']))
+                """, (snap_percentage, offense_snaps, defense_snaps, st_snaps, 
+                      existing[0]['depth_chart_id']))
                 updated_count += 1
             else:
-                # Insert new depth chart entry
                 db.execute_insert("""
                     INSERT INTO depth_charts 
-                    (team_id, player_id, position, depth_order, season, week, snap_percentage)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s)
-                """, (team_id, player_id, position, 99, season, week, snap_percentage))
+                    (team_id, player_id, position, depth_order, season, week, 
+                     snap_percentage, offense_snaps, defense_snaps, special_teams_snaps)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """, (team_id, player_id, position, 99, season, week, 
+                      snap_percentage, offense_snaps, defense_snaps, st_snaps))
                 added_to_depth += 1
             
-            if (updated_count + added_to_depth) % 100 == 0:
+            if (updated_count + added_to_depth) % 500 == 0:
                 print(f"  Progress: {updated_count + added_to_depth} records processed...")
                 
         except Exception as e:
             if "Duplicate entry" not in str(e):
                 print(f"Error processing {row.get('player', 'unknown')}: {e}")
+            skipped_count += 1
     
     print(f"\n{'=' * 70}")
     print(f"✓ Updated {updated_count} existing depth chart entries")
     print(f"✓ Added {added_to_depth} new depth chart entries with snap counts")
+    print(f"✓ Skipped {skipped_count} records (player not found)")
     print(f"{'=' * 70}")
     
-    # Show summary
     summary = db.execute_query("""
         SELECT season, COUNT(*) as entries, 
-               AVG(snap_percentage) as avg_snap_pct
+               AVG(snap_percentage) as avg_snap_pct,
+               COUNT(DISTINCT player_id) as unique_players
         FROM depth_charts
         WHERE snap_percentage IS NOT NULL
         GROUP BY season
@@ -111,9 +129,29 @@ def fetch_snap_counts(seasons):
     
     print("\nSnap Count Summary by Season:")
     for row in summary:
-        print(f"  {row['season']}: {row['entries']} entries, avg snap % = {row['avg_snap_pct']:.1f}%")
+        print(f"  {row['season']}: {row['entries']} entries, "
+              f"{row['unique_players']} players, "
+              f"avg snap % = {row['avg_snap_pct']:.1f}%")
+    
+    print("\nTop 10 Players by Average Snap % (2024):")
+    top_players = db.execute_query("""
+        SELECT p.name, p.position, t.abbreviation as team,
+               AVG(dc.snap_percentage) as avg_snaps,
+               COUNT(*) as weeks_played
+        FROM depth_charts dc
+        JOIN players p ON dc.player_id = p.player_id
+        JOIN teams t ON dc.team_id = t.team_id
+        WHERE dc.season = 2024 AND dc.snap_percentage > 0
+        GROUP BY dc.player_id
+        HAVING weeks_played >= 5
+        ORDER BY avg_snaps DESC
+        LIMIT 10
+    """)
+    
+    for player in top_players:
+        print(f"  {player['name']:25} ({player['position']}) {player['team']} - "
+              f"{player['avg_snaps']:.1f}% over {player['weeks_played']} weeks")
 
 if __name__ == "__main__":
-    # Fetch snap counts for 2022-2024
     seasons = [2022, 2023, 2024]
     fetch_snap_counts(seasons)
