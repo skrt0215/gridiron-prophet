@@ -177,13 +177,13 @@ elif analysis_type == "Team Comparison":
             col1, col2, col3 = st.columns(3)
             
             with col1:
-                st.metric("Predicted Spread", f"{home_team} {prediction['Predicted Spread']:+.1f}")
+                st.metric("Predicted Spread", f"{home_team} {prediction['predicted_spread']:+.1f}")
             
             with col2:
-                st.metric("ML Win Probability", f"{prediction['ML Home Win Probability']:.1%}")
+                st.metric("ML Win Probability", f"{prediction['ml_home_win_probability']:.1%}")
             
             with col3:
-                st.metric("Confidence", prediction['Confidence'])
+                st.metric("Confidence", prediction['confidence'])
             
             st.subheader("📊 Prediction Breakdown")
             
@@ -200,11 +200,11 @@ elif analysis_type == "Team Comparison":
             
             with col1:
                 st.metric(f"{home_team} Injury Impact", f"{prediction['injury_impact']['home']:.1f}")
-                st.caption(f"{prediction['injury_impact']['critical_home']} critical injuries")
+                st.caption(f"{prediction['injury_impact']['critical_home']} critical_injuries")
             
             with col2:
                 st.metric(f"{away_team} Injury Impact", f"{prediction['injury_impact']['away']:.1f}")
-                st.caption(f"{prediction['injury_impact']['critical_away']} critical injuries")
+                st.caption(f"{prediction['injury_impact']['critical_away']} critical_injuries")
 
 st.sidebar.markdown("---")
 st.sidebar.info("💡 **Tip:** Edge ≥ 3.0 points recommended for betting")
