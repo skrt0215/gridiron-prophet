@@ -1,0 +1,244 @@
+import streamlit as st
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
+from src.models.master_betting_predictor import MasterBettingPredictor
+from src.analysis.injury_impact import InjuryImpactAnalyzer
+import pandas as pd
+
+st.set_page_config(page_title="Gridiron Prophet", page_icon="🏈", layout="wide")
+
+st.title("🏈 Gridiron Prophet")
+st.subheader("NFL Betting Analysis & Predictions")
+
+st.sidebar.header("⚙️ Settings")
+
+season = st.sidebar.number_input("Season", min_value=2022, max_value=2025, value=2025, step=1)
+week = st.sidebar.number_input("Week", min_value=1, max_value=18, value=6, step=1)
+
+analysis_type = st.sidebar.selectbox(
+    "Analysis Type",
+    ["Weekly Predictions", "Injury Report", "Team Comparison"]
+)
+
+if analysis_type == "Weekly Predictions":
+    st.header(f"📊 Week {week} Predictions")
+    
+    if st.button("🔮 Generate Predictions", type="primary"):
+        with st.spinner("Training ML model and analyzing games..."):
+            predictor = MasterBettingPredictor()
+            
+            progress_bar = st.progress(0)
+            status_text = st.empty()
+            
+            status_text.text("Training ML model on 2022-2024 data...")
+            progress_bar.progress(20)
+            predictor.train_ml_model()
+            
+            status_text.text("Fetching DraftKings lines...")
+            progress_bar.progress(40)
+            odds_data = predictor.fetch_draftkings_lines()
+            
+            status_text.text("Analyzing games...")
+            progress_bar.progress(60)
+            
+            query = """
+                SELECT g.game_id, ht.abbreviation as home_team, at.abbreviation as away_team
+                FROM games g
+                JOIN teams ht ON g.home_team_id = ht.team_id
+                JOIN teams at ON g.away_team_id = at.team_id
+                WHERE g.season = %s AND g.week = %s
+                ORDER BY g.game_date
+            """
+            
+            games = predictor.db.execute_query(query, (season, week))
+            
+            if not games:
+                st.error(f"No games found for Week {week}")
+            else:
+                recommendations = []
+                
+                for game in games:
+                    home = game['home_team']
+                    away = game['away_team']
+                    
+                    prediction = predictor.calculate_comprehensive_prediction(home, away, season, week)
+                    dk_lines = predictor.parse_odds_for_game(odds_data, home, away) if odds_data else None
+                    
+                    if dk_lines and dk_lines['spread'] is not None:
+                        edge = prediction['predicted_spread'] - dk_lines['spread']
+                        
+                        if abs(edge) >= 3.0:
+                            recommended_bet = f"{home} {dk_lines['spread']:+.1f}" if edge > 0 else f"{away} {-dk_lines['spread']:+.1f}"
+                            
+                            recommendations.append({
+                                'game': f"{away} @ {home}",
+                                'bet': recommended_bet,
+                                'edge': edge,
+                                'confidence': prediction['confidence'],
+                                'ml_prob': prediction['ml_home_win_probability'],
+                                'predicted_spread': prediction['predicted_spread'],
+                                'vegas_spread': dk_lines['spread']
+                            })
+                
+                progress_bar.progress(100)
+                status_text.text("Analysis complete!")
+                
+                if recommendations:
+                    st.success(f"✅ Found {len(recommendations)} betting opportunities!")
+                    
+                    # Add explanation section
+                    with st.expander("ℹ️ How to Read These Predictions", expanded=False):
+                        st.markdown("""
+                        ### Understanding the Metrics
+                        
+                        **Recommended Bet**  
+                        The specific bet our model suggests (e.g., "IND -7.0" means bet on Indianapolis to win by more than 7 points)
+                        
+                        **Edge**  
+                        How much our model disagrees with Vegas. Positive edge means we think the home team will perform better than Vegas expects.
+                        - Edge ≥ +10: Very strong disagreement with Vegas (🔥 best bets)
+                        - Edge +5 to +10: Moderate disagreement
+                        - Edge < +3: Too small to bet on
+                        
+                        **Model Spread**  
+                        What our AI model predicts the final point difference will be (positive = home team wins)
+                        
+                        **Vegas Spread**  
+                        What DraftKings currently has as the betting line
+                        
+                        **ML Win Probability**  
+                        Our machine learning model's confidence that the home team wins (trained on 800+ historical games with 68.87% accuracy)
+                        
+                        **Confidence Level**  
+                        - **HIGH**: Multiple factors agree (record, injuries, ML model all align)
+                        - **MEDIUM**: Some factors agree
+                        - **LOW**: Mixed signals, proceed with caution
+                        
+                        ---
+                        
+                        💡 **Betting Strategy:** Focus on HIGH confidence bets with edge ≥ 10 points for best results.
+                        """)
+                    
+                    sorted_recs = sorted(recommendations, key=lambda x: abs(x['edge']), reverse=True)
+                    
+                    for i, rec in enumerate(sorted_recs, 1):
+                        with st.expander(f"#{i} - {rec['game']} - Edge: {rec['edge']:+.1f}"):
+                            col1, col2, col3 = st.columns(3)
+                            
+                            with col1:
+                                st.metric("Recommended Bet", rec['bet'])
+                                st.metric("Confidence", rec['confidence'])
+                            
+                            with col2:
+                                st.metric("Edge", f"{rec['edge']:+.1f} pts")
+                                st.metric("ML Win Probability", f"{rec['ml_prob']:.1%}")
+                            
+                            with col3:
+                                st.metric("Model Spread", f"{rec['predicted_spread']:+.1f}")
+                                st.metric("Vegas Spread", f"{rec['vegas_spread']:+.1f}")
+                    
+                    df = pd.DataFrame(sorted_recs)
+                    st.dataframe(df, use_container_width=True)
+                    
+                    predictor.save_weekly_report(season, week, recommendations)
+                    st.info("💾 Report saved to reports/ folder")
+                else:
+                    st.warning("⚠️ No strong betting opportunities found this week")
+
+elif analysis_type == "Injury Report":
+    st.header("🏥 Team Injury Analysis")
+    
+    analyzer = InjuryImpactAnalyzer()
+    
+    teams = analyzer.db.get_all_teams()
+    team_abbrs = [t['abbreviation'] for t in teams]
+    
+    selected_team = st.selectbox("Select Team", team_abbrs)
+    
+    if st.button("Get Injury Report"):
+        with st.spinner("Analyzing injuries..."):
+            impact = analyzer.get_team_injury_impact(selected_team, season, week)
+            
+            st.metric("Total Injury Impact", f"{impact['total_impact']:.1f}")
+            st.metric("Total Injuries", impact['injury_count'])
+            st.metric("Critical Injuries", len(impact['critical_injuries']))
+            
+            if impact['critical_injuries']:
+                st.subheader("⚠️ Critical Injuries")
+                for inj in impact['critical_injuries']:
+                    st.warning(f"{inj['player']} ({inj['position']}) - {inj['status']} - Impact: {inj['impact_score']:.1f}")
+            
+            if impact['injuries']:
+                st.subheader("All Injuries")
+                df = pd.DataFrame(impact['injuries'])
+    
+                # Rename and reorder columns
+                df = df.rename(columns={'body_part': 'expected_return'})
+    
+                # Display in better order (lowercase column names)
+                column_order = ['player', 'position', 'status', 'expected_return', 'impact_score']
+                df = df[column_order]
+    
+                st.dataframe(df, use_container_width=True)
+
+elif analysis_type == "Team Comparison":
+    st.header("⚔️ Head-to-Head Comparison")
+    
+    analyzer = InjuryImpactAnalyzer()
+    teams = analyzer.db.get_all_teams()
+    team_abbrs = [t['abbreviation'] for t in teams]
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        home_team = st.selectbox("Home Team", team_abbrs, index=team_abbrs.index('KC') if 'KC' in team_abbrs else 0)
+    
+    with col2:
+        away_team = st.selectbox("Away Team", team_abbrs, index=team_abbrs.index('BUF') if 'BUF' in team_abbrs else 1)
+    
+    if st.button("Compare Teams"):
+        with st.spinner("Comparing teams..."):
+            predictor = MasterBettingPredictor()
+            predictor.train_ml_model()
+            
+            prediction = predictor.calculate_comprehensive_prediction(home_team, away_team, season, week)
+            
+            st.subheader(f"{away_team} @ {home_team}")
+            
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                st.metric("Predicted Spread", f"{home_team} {prediction['predicted_spread']:+.1f}")
+            
+            with col2:
+                st.metric("ML Win Probability", f"{prediction['ml_home_win_probability']:.1%}")
+            
+            with col3:
+                st.metric("Confidence", prediction['confidence'])
+            
+            st.subheader("📊 Prediction Breakdown")
+            
+            components_df = pd.DataFrame([
+                {"Factor": k.replace('_', ' ').title(), "Value": f"{v:+.2f}"}
+                for k, v in prediction['components'].items()
+            ])
+            
+            st.dataframe(components_df, use_container_width=True)
+            
+            st.subheader("🏥 Injury Comparison")
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.metric(f"{home_team} Injury Impact", f"{prediction['injury_impact']['home']:.1f}")
+                st.caption(f"{prediction['injury_impact']['critical_home']} critical injuries")
+            
+            with col2:
+                st.metric(f"{away_team} Injury Impact", f"{prediction['injury_impact']['away']:.1f}")
+                st.caption(f"{prediction['injury_impact']['critical_away']} critical injuries")
+
+st.sidebar.markdown("---")
+st.sidebar.info("💡 **Tip:** Edge ≥ 3.0 points recommended for betting")
+st.sidebar.caption("Model Accuracy: 68.87% (Subject to change during training)")
