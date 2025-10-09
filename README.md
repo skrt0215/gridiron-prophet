@@ -35,3 +35,4 @@ Gridiron Prophet is a program that has been trained to analyze, process, and pre
 - [ ] Real-time analysis post game for accuracy in training
 - [ ] Weather forecast to implement into the decision process
 - [x] Weekly generated report
+- [x] Optimized streamlit site for public usage and better interaction
