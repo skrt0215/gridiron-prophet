@@ -208,21 +208,25 @@ elif analysis_type == "Team Rosters":
     with col2:
         if st.button("🔄 Load Roster", type="primary"):
             with st.spinner(f"Loading {selected_team} roster..."):
-                # Query to get roster - FIXED to use 'name' column instead of 'player_name'
+                # Query to get roster - Uses player_seasons to show current season only and avoid duplicates
                 query = """
-                    SELECT 
-                        name as player_name,
-                        position,
-                        jersey_number,
-                        status,
-                        height,
-                        weight,
-                        college,
-                        years_in_league
-                    FROM players
-                    WHERE team_id = (SELECT team_id FROM teams WHERE abbreviation = %s)
+                    SELECT DISTINCT
+                        p.name as player_name,
+                        ps.position,
+                        ps.jersey_number,
+                        ps.status,
+                        p.height,
+                        p.weight,
+                        p.college,
+                        ps.years_in_league,
+                        ps.games_played,
+                        ps.games_started
+                    FROM player_seasons ps
+                    JOIN players p ON ps.player_id = p.player_id
+                    WHERE ps.team_id = (SELECT team_id FROM teams WHERE abbreviation = %s)
+                    AND ps.season = %s
                     ORDER BY 
-                        CASE position
+                        CASE ps.position
                             WHEN 'QB' THEN 1
                             WHEN 'RB' THEN 2
                             WHEN 'WR' THEN 3
@@ -243,11 +247,11 @@ elif analysis_type == "Team Rosters":
                             WHEN 'LS' THEN 10
                             ELSE 11
                         END,
-                        name
+                        p.name
                 """
                 
                 try:
-                    roster = analyzer.db.execute_query(query, (selected_team,))
+                    roster = analyzer.db.execute_query(query, (selected_team, season))
                     
                     if roster:
                         st.success(f"✅ Found {len(roster)} players on {selected_team} roster")
