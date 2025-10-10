@@ -141,16 +141,6 @@ class InjuryFetcherV2:
             return result[0]['player_id']
         
         query = """
-            SELECT p.player_id 
-            FROM players p
-            WHERE p.name = %s AND p.position = %s
-        """
-        result = self.db.execute_query(query, (player_name, position))
-        
-        if result:
-            return result[0]['player_id']
-        
-        query = """
             SELECT p.player_id, p.name 
             FROM players p
             JOIN player_seasons ps ON p.player_id = ps.player_id
@@ -172,8 +162,8 @@ class InjuryFetcherV2:
         print(f"  → Creating new player: {player_name} ({position}) for team_id {team_id}")
         
         player_id = self.db.execute_insert(
-            "INSERT INTO players (name, position) VALUES (%s, %s)",
-            (player_name, position)
+            "INSERT INTO players (name, team_id, position) VALUES (%s, %s, %s)",
+            (player_name, team_id, position)
         )
         
         self.db.execute_insert("""

@@ -55,14 +55,14 @@ class InjuryImpactAnalyzer:
         result = self.db.execute_query(query, (player_id,))
         
         if not result or not result[0]['avg_snaps']:
-            # No snap data, assume moderate importance
-            return 0.5
+            # No snap data = never played, minimal importance
+            return 0.1
         
         avg_snaps = float(result[0]['avg_snaps'])
         depth = result[0]['depth']
         
-        # Normalize snap percentage (0-100 -> 0-1)
-        snap_factor = min(avg_snaps / 100.0, 1.0)
+        # Snap count factor
+        snap_factor = min(avg_snaps, 1.0)
         
         # Bonus for being listed higher on depth chart
         depth_bonus = 0.0

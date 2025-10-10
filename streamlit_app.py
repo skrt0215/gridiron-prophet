@@ -225,6 +225,7 @@ elif analysis_type == "Team Rosters":
                     JOIN players p ON ps.player_id = p.player_id
                     WHERE ps.team_id = (SELECT team_id FROM teams WHERE abbreviation = %s)
                     AND ps.season = %s
+                    AND ps.roster_status = 'Active'
                     ORDER BY 
                         CASE ps.position
                             WHEN 'QB' THEN 1

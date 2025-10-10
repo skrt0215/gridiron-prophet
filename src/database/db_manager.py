@@ -58,7 +58,10 @@ class DatabaseManager:
                 cursor.execute(query, params or ())
                 return cursor.rowcount
     
-    # Team Operations
+    # ========================
+    # TEAM OPERATIONS
+    # ========================
+    
     def add_team(self, name, abbreviation, city=None, conference=None, 
                  division=None, stadium=None, head_coach=None):
         """Add a new team to the database"""
@@ -79,31 +82,135 @@ class DatabaseManager:
         query = "SELECT * FROM teams ORDER BY name"
         return self.execute_query(query)
     
-    # Player Operations
-    def add_player(self, name, team_id=None, position=None, jersey_number=None,
-                   height=None, weight=None, age=None, college=None, 
-                   years_in_league=None, status='Active'):
-        """Add a new player to the database"""
-        query = """
-            INSERT INTO players (name, team_id, position, jersey_number, height, 
-                               weight, age, college, years_in_league, status)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-        """
-        return self.execute_insert(query, (name, team_id, position, jersey_number, height, weight, age, college, 
-                                           years_in_league, status))
+    # ========================
+    # PLAYER OPERATIONS (Season-agnostic master table)
+    # ========================
     
-    def get_players_by_team(self, team_id):
-        """Get all players for a specific team"""
+    def add_player(self, name, position=None, height=None, weight=None, 
+                   college=None):
+        """Add a player to the master players table (NO team info here)"""
         query = """
-            SELECT p.*, t.name as team_name, t.abbreviation as team_abbr
-            FROM players p
-            LEFT JOIN teams t ON p.team_id = t.team_id
-            WHERE p.team_id = %s
-            ORDER BY p.position, p.name
+            INSERT INTO players (name, position, height, weight, college)
+            VALUES (%s, %s, %s, %s, %s)
+            ON DUPLICATE KEY UPDATE player_id=LAST_INSERT_ID(player_id)
         """
-        return self.execute_query(query, (team_id,))
+        return self.execute_insert(query, (name, position, height, weight, college))
     
-    # Game Operations
+    def get_player_by_name(self, name, position=None):
+        """Get player by name (and optionally position)"""
+        if position:
+            query = "SELECT * FROM players WHERE name = %s AND position = %s LIMIT 1"
+            results = self.execute_query(query, (name, position))
+        else:
+            query = "SELECT * FROM players WHERE name = %s LIMIT 1"
+            results = self.execute_query(query, (name,))
+        return results[0] if results else None
+    
+    def get_or_create_player(self, name, position=None, height=None, weight=None, 
+                            college=None):
+        """Get existing player or create new one, return player_id"""
+        player = self.get_player_by_name(name, position)
+        if player:
+            return player['player_id']
+        return self.add_player(name, position, height, weight, college)
+    
+    # ========================
+    # PLAYER SEASONS OPERATIONS (Team assignments by season)
+    # ========================
+    
+    def add_player_season(self, player_id, season, team_id, position=None, 
+                         jersey_number=None, age=None, years_in_league=None,
+                         roster_status='Active', status='Active'):
+        """Add or update player-season record"""
+        query = """
+            INSERT INTO player_seasons 
+            (player_id, season, team_id, position, jersey_number, age, 
+             years_in_league, roster_status, status)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ON DUPLICATE KEY UPDATE
+                team_id = VALUES(team_id),
+                position = VALUES(position),
+                jersey_number = VALUES(jersey_number),
+                age = VALUES(age),
+                years_in_league = VALUES(years_in_league),
+                roster_status = VALUES(roster_status),
+                status = VALUES(status)
+        """
+        return self.execute_insert(query, (player_id, season, team_id, position, 
+                                          jersey_number, age, years_in_league, 
+                                          roster_status, status))
+    
+    def get_player_season(self, player_id, season):
+        """Get player's team/info for a specific season"""
+        query = """
+            SELECT ps.*, p.name, p.position as player_position, t.abbreviation as team_abbr
+            FROM player_seasons ps
+            JOIN players p ON ps.player_id = p.player_id
+            JOIN teams t ON ps.team_id = t.team_id
+            WHERE ps.player_id = %s AND ps.season = %s
+        """
+        results = self.execute_query(query, (player_id, season))
+        return results[0] if results else None
+    
+    def get_active_players_for_season(self, season, team_id=None, roster_status='Active'):
+        """Get all active players for a season (optionally filtered by team)"""
+        if team_id:
+            query = """
+                SELECT ps.*, p.name, p.height, p.weight, p.college, t.abbreviation as team_abbr
+                FROM player_seasons ps
+                JOIN players p ON ps.player_id = p.player_id
+                JOIN teams t ON ps.team_id = t.team_id
+                WHERE ps.season = %s AND ps.team_id = %s AND ps.roster_status = %s
+                ORDER BY ps.position, p.name
+            """
+            return self.execute_query(query, (season, team_id, roster_status))
+        else:
+            query = """
+                SELECT ps.*, p.name, p.height, p.weight, p.college, t.abbreviation as team_abbr
+                FROM player_seasons ps
+                JOIN players p ON ps.player_id = p.player_id
+                JOIN teams t ON ps.team_id = t.team_id
+                WHERE ps.season = %s AND ps.roster_status = %s
+                ORDER BY t.abbreviation, ps.position, p.name
+            """
+            return self.execute_query(query, (season, roster_status))
+    
+    def get_players_by_team_season(self, team_id, season):
+        """Get all players for a team in a specific season"""
+        query = """
+            SELECT ps.*, p.name, p.height, p.weight, p.college
+            FROM player_seasons ps
+            JOIN players p ON ps.player_id = p.player_id
+            WHERE ps.team_id = %s AND ps.season = %s
+            ORDER BY ps.position, p.name
+        """
+        return self.execute_query(query, (team_id, season))
+    
+    def update_roster_status(self, player_id, season, roster_status):
+        """Update a player's roster status for a season"""
+        query = """
+            UPDATE player_seasons 
+            SET roster_status = %s 
+            WHERE player_id = %s AND season = %s
+        """
+        return self.execute_update(query, (roster_status, player_id, season))
+    
+    def get_player_history(self, player_id):
+        """Get all seasons a player has played"""
+        query = """
+            SELECT ps.season, t.abbreviation as team, ps.position, 
+                   ps.games_played, ps.games_started, ps.roster_status
+            FROM player_seasons ps
+            JOIN teams t ON ps.team_id = t.team_id
+            WHERE ps.player_id = %s
+            ORDER BY ps.season DESC
+        """
+        return self.execute_query(query, (player_id,))
+    
+    # ========================
+    # GAME OPERATIONS
+    # ========================
+    
     def game_exists(self, season, week, home_team_id, away_team_id):
         """Check if a game already exists"""
         query = """
@@ -126,18 +233,19 @@ class DatabaseManager:
                              is_dome, game_status)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """
-        return self.execute_insert(query, (season, week, game_date, game_time, home_team_id, away_team_id, home_score,
-        away_score, stadium, weather_temp, weather_wind, weather_conditions, is_dome, game_status))
+        return self.execute_insert(query, (season, week, game_date, game_time, home_team_id, 
+                                          away_team_id, home_score, away_score, stadium, 
+                                          weather_temp, weather_wind, weather_conditions, 
+                                          is_dome, game_status))
     
     def add_game_safe(self, season, week, game_date, home_team_id, away_team_id,
-                 game_time=None, home_score=None, away_score=None, stadium=None,
-                 weather_temp=None, weather_wind=None, weather_conditions=None,
-                 is_dome=False, game_status='Scheduled'):
+                     game_time=None, home_score=None, away_score=None, stadium=None,
+                     weather_temp=None, weather_wind=None, weather_conditions=None,
+                     is_dome=False, game_status='Scheduled'):
         """Add a game only if it doesn't exist, otherwise update it"""
         existing_game_id = self.game_exists(season, week, home_team_id, away_team_id)
         
         if existing_game_id:
-            # Update existing game instead of inserting duplicate
             query = """
                 UPDATE games SET 
                     game_date = %s, game_time = %s, home_score = %s, away_score = %s,
@@ -146,31 +254,15 @@ class DatabaseManager:
                 WHERE game_id = %s
             """
             self.execute_update(query, (game_date, game_time, home_score, away_score,
-                                        stadium, weather_temp, weather_wind, 
-                                        weather_conditions, is_dome, game_status,
-                                        existing_game_id))
+                                       stadium, weather_temp, weather_wind, 
+                                       weather_conditions, is_dome, game_status,
+                                       existing_game_id))
             return existing_game_id
         else:
-            # Insert new game
             return self.add_game(season, week, game_date, home_team_id, away_team_id,
                                game_time, home_score, away_score, stadium,
                                weather_temp, weather_wind, weather_conditions,
                                is_dome, game_status)
-    
-    def clear_duplicates(self):
-        """Remove duplicate games, keeping the most recent entry"""
-        query = """
-            DELETE g1 FROM games g1
-            INNER JOIN games g2 
-            WHERE g1.game_id < g2.game_id
-            AND g1.season = g2.season
-            AND g1.week = g2.week
-            AND g1.home_team_id = g2.home_team_id
-            AND g1.away_team_id = g2.away_team_id
-        """
-        rows_deleted = self.execute_update(query)
-        print(f"Removed {rows_deleted} duplicate games")
-        return rows_deleted
     
     def get_games_by_week(self, season, week):
         """Get all games for a specific week"""
@@ -186,33 +278,131 @@ class DatabaseManager:
         """
         return self.execute_query(query, (season, week))
     
-    # Injury Operations
-    def add_injury(self, player_id, injury_status, date_reported, game_id=None,
-                   body_part=None, expected_return_date=None, practice_status=None,
-                   notes=None):
+    def get_games_by_season(self, season):
+        """Get all games for a season"""
+        query = """
+            SELECT g.*, 
+                   ht.abbreviation as home_team_abbr,
+                   at.abbreviation as away_team_abbr
+            FROM games g
+            JOIN teams ht ON g.home_team_id = ht.team_id
+            JOIN teams at ON g.away_team_id = at.team_id
+            WHERE g.season = %s
+            ORDER BY g.week, g.game_date
+        """
+        return self.execute_query(query, (season,))
+    
+    # ========================
+    # PLAYER GAME STATS OPERATIONS
+    # ========================
+    
+    def add_player_game_stat(self, player_id, game_id, team_id, season, week, **stats):
+        """Add player game statistics (takes all stat fields as kwargs)"""
+        # Build column and value lists dynamically
+        base_cols = ['player_id', 'game_id', 'team_id', 'season', 'week']
+        base_vals = [player_id, game_id, team_id, season, week]
+        
+        stat_cols = list(stats.keys())
+        stat_vals = list(stats.values())
+        
+        all_cols = base_cols + stat_cols
+        all_vals = base_vals + stat_vals
+        
+        placeholders = ', '.join(['%s'] * len(all_vals))
+        columns = ', '.join(all_cols)
+        
+        query = f"""
+            INSERT INTO player_game_stats ({columns})
+            VALUES ({placeholders})
+            ON DUPLICATE KEY UPDATE
+                {', '.join([f"{col} = VALUES({col})" for col in stat_cols])}
+        """
+        
+        return self.execute_insert(query, tuple(all_vals))
+    
+    def get_player_stats_by_season(self, player_id, season):
+        """Get all game stats for a player in a season"""
+        query = """
+            SELECT pgs.*, g.week, g.game_date
+            FROM player_game_stats pgs
+            JOIN games g ON pgs.game_id = g.game_id
+            WHERE pgs.player_id = %s AND pgs.season = %s
+            ORDER BY g.week
+        """
+        return self.execute_query(query, (player_id, season))
+    
+    def get_player_career_stats(self, player_id):
+        """Get career statistics for a player"""
+        query = """
+            SELECT 
+                pgs.season,
+                COUNT(*) as games,
+                SUM(pgs.pass_yards) as total_pass_yards,
+                SUM(pgs.pass_touchdowns) as total_pass_tds,
+                SUM(pgs.rush_yards) as total_rush_yards,
+                SUM(pgs.rush_touchdowns) as total_rush_tds,
+                SUM(pgs.receiving_yards) as total_rec_yards,
+                SUM(pgs.receiving_touchdowns) as total_rec_tds,
+                SUM(pgs.tackles) as total_tackles,
+                SUM(pgs.sacks) as total_sacks
+            FROM player_game_stats pgs
+            WHERE pgs.player_id = %s
+            GROUP BY pgs.season
+            ORDER BY pgs.season DESC
+        """
+        return self.execute_query(query, (player_id,))
+    
+    # ========================
+    # INJURY OPERATIONS
+    # ========================
+    
+    def add_injury(self, player_id, season, injury_status, date_reported, 
+                   week=None, game_id=None, body_part=None, expected_return_date=None, 
+                   practice_status=None, notes=None):
         """Add an injury report"""
         query = """
-            INSERT INTO injuries (player_id, game_id, injury_status, body_part,
-                                date_reported, expected_return_date, practice_status, notes)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            INSERT INTO injuries (player_id, season, week, game_id, injury_status, 
+                                body_part, date_reported, expected_return_date, 
+                                practice_status, notes)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """
-        return self.execute_insert(query, (player_id, game_id, injury_status,
-                                           body_part, date_reported,
-                                           expected_return_date, practice_status, notes))
+        return self.execute_insert(query, (player_id, season, week, game_id, injury_status,
+                                          body_part, date_reported, expected_return_date,
+                                          practice_status, notes))
     
-    def get_active_injuries(self):
-        """Get all current injuries (not resolved)"""
+    def get_injuries_by_season_week(self, season, week):
+        """Get all injuries for a specific week"""
         query = """
-            SELECT i.*, p.name as player_name, p.position, t.name as team_name
+            SELECT i.*, p.name as player_name, p.position, 
+                   ps.team_id, t.abbreviation as team_abbr
             FROM injuries i
             JOIN players p ON i.player_id = p.player_id
-            LEFT JOIN teams t ON p.team_id = t.team_id
-            WHERE i.injury_status IN ('Out', 'Doubtful', 'Questionable', 'IR')
+            JOIN player_seasons ps ON i.player_id = ps.player_id AND i.season = ps.season
+            JOIN teams t ON ps.team_id = t.team_id
+            WHERE i.season = %s AND i.week = %s
+            ORDER BY t.abbreviation, p.name
+        """
+        return self.execute_query(query, (season, week))
+    
+    def get_active_injuries(self, season):
+        """Get all current injuries for a season"""
+        query = """
+            SELECT i.*, p.name as player_name, p.position,
+                   ps.team_id, t.abbreviation as team_abbr
+            FROM injuries i
+            JOIN players p ON i.player_id = p.player_id
+            JOIN player_seasons ps ON i.player_id = ps.player_id AND i.season = ps.season
+            JOIN teams t ON ps.team_id = t.team_id
+            WHERE i.season = %s 
+            AND i.injury_status IN ('Out', 'Doubtful', 'Questionable', 'IR')
             ORDER BY i.date_reported DESC
         """
-        return self.execute_query(query)
+        return self.execute_query(query, (season,))
     
-    # Betting Lines Operations
+    # ========================
+    # BETTING LINES OPERATIONS
+    # ========================
+    
     def add_betting_line(self, game_id, source=None, spread=None, spread_juice=None,
                         moneyline_home=None, moneyline_away=None, over_under=None,
                         over_juice=None, under_juice=None, is_opening_line=False,
@@ -226,9 +416,9 @@ class DatabaseManager:
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """
         return self.execute_insert(query, (game_id, source, spread, spread_juice,
-                                           moneyline_home, moneyline_away,
-                                           over_under, over_juice, under_juice,
-                                           is_opening_line, is_closing_line))
+                                          moneyline_home, moneyline_away,
+                                          over_under, over_juice, under_juice,
+                                          is_opening_line, is_closing_line))
     
     def get_betting_lines_for_game(self, game_id):
         """Get all betting lines for a specific game"""
@@ -238,19 +428,37 @@ class DatabaseManager:
             ORDER BY timestamp
         """
         return self.execute_query(query, (game_id,))
+    
+    # ========================
+    # UTILITY OPERATIONS
+    # ========================
+    
+    def clear_duplicates(self):
+        """Remove duplicate games, keeping the most recent entry"""
+        query = """
+            DELETE g1 FROM games g1
+            INNER JOIN games g2 
+            WHERE g1.game_id < g2.game_id
+            AND g1.season = g2.season
+            AND g1.week = g2.week
+            AND g1.home_team_id = g2.home_team_id
+            AND g1.away_team_id = g2.away_team_id
+        """
+        rows_deleted = self.execute_update(query)
+        print(f"Removed {rows_deleted} duplicate games")
+        return rows_deleted
 
 # Example usage
 if __name__ == "__main__":
     db = DatabaseManager()
     
-    # Test connection
     try:
         teams = db.get_all_teams()
-        print(f"Database connected successfully! Found {len(teams)} teams.")
+        print(f"✓ Database connected! Found {len(teams)} teams.")
         
-        # Clean up any duplicates
-        print("\nChecking for duplicate games...")
-        db.clear_duplicates()
+        # Test player_seasons query
+        active_2025 = db.get_active_players_for_season(2025)
+        print(f"✓ Found {len(active_2025)} active players for 2025 season")
         
     except Exception as e:
-        print(f"Database connection failed: {e}")
+        print(f"✗ Database error: {e}")
