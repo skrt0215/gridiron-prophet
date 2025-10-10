@@ -4,24 +4,45 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from database.db_manager import DatabaseManager
 import pandas as pd
-from sklearn.model_selection import train_test_split
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
 import numpy as np
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
+import pickle
 
 class NFLGamePredictor:
-    """Predicts NFL game winners using machine learning"""
+    """
+    Machine Learning model for predicting NFL game outcomes
+    """
     
     def __init__(self):
         self.db = DatabaseManager()
         self.model = None
-        self.feature_columns = []
+        self.feature_columns = None
     
-    def fetch_training_data(self, seasons):
-        """Fetch game data and calculate features"""
+    def fetch_training_data(self, seasons, max_week_2025=None):
+        """
+        Fetch historical game data for training
+        
+        Args:
+            seasons: List of seasons (e.g., [2022, 2023, 2024, 2025])
+            max_week_2025: Only include 2025 games up to this week
+        """
         print("Fetching game data from database...")
         
-        query = """
+        # Build the WHERE clause
+        where_clauses = [f"g.season IN ({','.join(['%s'] * len(seasons))})"]
+        params = list(seasons)
+        
+        # Add week limit for 2025 if specified
+        if max_week_2025 and 2025 in seasons:
+            where_clauses.append("(g.season < 2025 OR g.week <= %s)")
+            params.append(max_week_2025)
+        
+        # Only completed games
+        where_clauses.append("g.game_status = 'Final'")
+        
+        query = f"""
             SELECT 
                 g.game_id,
                 g.season,
@@ -30,112 +51,121 @@ class NFLGamePredictor:
                 g.away_team_id,
                 g.home_score,
                 g.away_score,
-                ht.name as home_team_name,
-                at.name as away_team_name
+                ht.abbreviation as home_team,
+                at.abbreviation as away_team,
+                CASE WHEN g.home_score > g.away_score THEN 1 ELSE 0 END as home_win
             FROM games g
             JOIN teams ht ON g.home_team_id = ht.team_id
             JOIN teams at ON g.away_team_id = at.team_id
-            WHERE g.season IN ({})
-            AND g.game_status = 'Final'
-            AND g.home_score IS NOT NULL
-            AND g.away_score IS NOT NULL
-            ORDER BY g.season, g.week, g.game_date
-        """.format(','.join(['%s'] * len(seasons)))
+            WHERE {' AND '.join(where_clauses)}
+            ORDER BY g.season, g.week
+        """
         
-        games = self.db.execute_query(query, tuple(seasons))
-        df = pd.DataFrame(games)
+        games = self.db.execute_query(query, tuple(params))
         
-        print(f"Found {len(df)} completed games")
+        print(f"Found {len(games)} completed games")
         
-        return df
+        return pd.DataFrame(games)
     
-    def calculate_team_stats(self, df):
-        """Calculate rolling team statistics"""
+    def calculate_team_stats(self, games_df):
+        """
+        Calculate cumulative team statistics for each game
+        """
         print("Calculating team statistics...")
         
-        team_stats = {}
+        features_list = []
         
-        for team_id in df['home_team_id'].unique():
-            team_stats[team_id] = {
-                'wins': 0,
-                'losses': 0,
-                'points_scored': [],
-                'points_allowed': [],
-                'games_played': 0
-            }
+        # Group by season and process sequentially
+        for season in games_df['season'].unique():
+            season_games = games_df[games_df['season'] == season].copy()
+            
+            # Initialize team stats for this season
+            team_stats = {}
+            
+            for idx, game in season_games.iterrows():
+                home_team = game['home_team']
+                away_team = game['away_team']
+                
+                # Initialize teams if not seen yet this season
+                if home_team not in team_stats:
+                    team_stats[home_team] = {
+                        'wins': 0, 'losses': 0,
+                        'points_scored': [], 'points_allowed': []
+                    }
+                if away_team not in team_stats:
+                    team_stats[away_team] = {
+                        'wins': 0, 'losses': 0,
+                        'points_scored': [], 'points_allowed': []
+                    }
+                
+                # Get current stats (before this game)
+                home_stats = team_stats[home_team]
+                away_stats = team_stats[away_team]
+                
+                # Calculate features based on stats BEFORE this game
+                home_games = home_stats['wins'] + home_stats['losses']
+                away_games = away_stats['wins'] + away_stats['losses']
+                
+                features = {
+                    'game_id': game['game_id'],
+                    'season': game['season'],
+                    'week': game['week'],
+                    'home_team': home_team,
+                    'away_team': away_team,
+                    'home_wins': home_stats['wins'],
+                    'home_losses': home_stats['losses'],
+                    'home_win_pct': home_stats['wins'] / max(home_games, 1),
+                    'home_avg_points_scored': np.mean(home_stats['points_scored']) if home_stats['points_scored'] else 0,
+                    'home_avg_points_allowed': np.mean(home_stats['points_allowed']) if home_stats['points_allowed'] else 0,
+                    'away_wins': away_stats['wins'],
+                    'away_losses': away_stats['losses'],
+                    'away_win_pct': away_stats['wins'] / max(away_games, 1),
+                    'away_avg_points_scored': np.mean(away_stats['points_scored']) if away_stats['points_scored'] else 0,
+                    'away_avg_points_allowed': np.mean(away_stats['points_allowed']) if away_stats['points_allowed'] else 0,
+                    'home_win': game['home_win']
+                }
+                
+                features_list.append(features)
+                
+                # Update stats AFTER recording features (for next game)
+                home_scored = game['home_score']
+                away_scored = game['away_score']
+                
+                # Update home team stats
+                team_stats[home_team]['points_scored'].append(home_scored)
+                team_stats[home_team]['points_allowed'].append(away_scored)
+                if game['home_win']:
+                    team_stats[home_team]['wins'] += 1
+                else:
+                    team_stats[home_team]['losses'] += 1
+                
+                # Update away team stats
+                team_stats[away_team]['points_scored'].append(away_scored)
+                team_stats[away_team]['points_allowed'].append(home_scored)
+                if not game['home_win']:
+                    team_stats[away_team]['wins'] += 1
+                else:
+                    team_stats[away_team]['losses'] += 1
         
-        # Add features for each game
-        features = []
-        
-        for idx, game in df.iterrows():
-            home_id = game['home_team_id']
-            away_id = game['away_team_id']
-            
-            # Get current team stats (before this game)
-            home_stats = team_stats[home_id]
-            away_stats = team_stats[away_id]
-            
-            # Calculate features
-            feature_dict = {
-                'game_id': game['game_id'],
-                'season': game['season'],
-                'week': game['week'],
-                'home_team_id': home_id,
-                'away_team_id': away_id,
-                
-                # Home team features
-                'home_wins': home_stats['wins'],
-                'home_losses': home_stats['losses'],
-                'home_win_pct': home_stats['wins'] / max(home_stats['games_played'], 1),
-                'home_avg_points_scored': np.mean(home_stats['points_scored']) if home_stats['points_scored'] else 0,
-                'home_avg_points_allowed': np.mean(home_stats['points_allowed']) if home_stats['points_allowed'] else 0,
-                
-                # Away team features
-                'away_wins': away_stats['wins'],
-                'away_losses': away_stats['losses'],
-                'away_win_pct': away_stats['wins'] / max(away_stats['games_played'], 1),
-                'away_avg_points_scored': np.mean(away_stats['points_scored']) if away_stats['points_scored'] else 0,
-                'away_avg_points_allowed': np.mean(away_stats['points_allowed']) if away_stats['points_allowed'] else 0,
-                
-                # Target variable (1 = home win, 0 = away win)
-                'home_win': 1 if game['home_score'] > game['away_score'] else 0,
-                
-                # Actual scores (for analysis)
-                'home_score': game['home_score'],
-                'away_score': game['away_score']
-            }
-            
-            features.append(feature_dict)
-            
-            # Update team stats after this game
-            home_score = game['home_score']
-            away_score = game['away_score']
-            
-            team_stats[home_id]['games_played'] += 1
-            team_stats[home_id]['points_scored'].append(home_score)
-            team_stats[home_id]['points_allowed'].append(away_score)
-            
-            team_stats[away_id]['games_played'] += 1
-            team_stats[away_id]['points_scored'].append(away_score)
-            team_stats[away_id]['points_allowed'].append(home_score)
-            
-            if home_score > away_score:
-                team_stats[home_id]['wins'] += 1
-                team_stats[away_id]['losses'] += 1
-            else:
-                team_stats[away_id]['wins'] += 1
-                team_stats[home_id]['losses'] += 1
-        
-        return pd.DataFrame(features)
+        return pd.DataFrame(features_list)
     
-    def train_model(self, seasons):
-        """Train the prediction model"""
+    def train_model(self, seasons, max_week_2025=None):
+        """
+        Train the prediction model
+        
+        Args:
+            seasons: List of seasons to train on (e.g., [2022, 2023, 2024, 2025])
+            max_week_2025: For 2025, only include games up to this week (for weekly updates)
+        """
         print("=" * 70)
         print("TRAINING NFL GAME PREDICTION MODEL")
         print("=" * 70)
         
-        # Fetch and prepare data
-        games_df = self.fetch_training_data(seasons)
+        if max_week_2025:
+            print(f"Including 2025 games through Week {max_week_2025}")
+        
+        # Fetch and prepare data (with optional week limit)
+        games_df = self.fetch_training_data(seasons, max_week_2025)
         features_df = self.calculate_team_stats(games_df)
         
         # Remove early season games where teams have no history
@@ -209,17 +239,82 @@ class NFLGamePredictor:
         print(f"  Home team wins: {home_wins}/{total_games} ({home_wins/total_games:.1%})")
         
         return accuracy
-
-def main():
-    predictor = NFLGamePredictor()
     
-    # Train on 2022-2023 seasons
-    seasons = [2022, 2023]
-    accuracy = predictor.train_model(seasons)
+    def save_model(self, filepath='src/models/spread_model.pkl'):
+        """Save the trained model to disk"""
+        if self.model is None:
+            raise ValueError("No model to save. Train the model first.")
+        
+        model_data = {
+            'model': self.model,
+            'feature_columns': self.feature_columns
+        }
+        
+        os.makedirs(os.path.dirname(filepath), exist_ok=True)
+        
+        with open(filepath, 'wb') as f:
+            pickle.dump(model_data, f)
+        
+        print(f"\n✓ Model saved to {filepath}")
     
-    print(f"\n{'=' * 70}")
-    print(f"Model trained successfully with {accuracy:.2%} accuracy!")
-    print(f"{'=' * 70}")
+    def load_model(self, filepath='src/models/spread_model.pkl'):
+        """Load a trained model from disk"""
+        with open(filepath, 'rb') as f:
+            model_data = pickle.load(f)
+        
+        self.model = model_data['model']
+        self.feature_columns = model_data['feature_columns']
+        
+        print(f"✓ Model loaded from {filepath}")
+    
+    def predict_game(self, home_team_stats, away_team_stats):
+        """
+        Predict outcome of a single game
+        
+        Args:
+            home_team_stats: Dict with keys matching feature_columns (home_*)
+            away_team_stats: Dict with keys matching feature_columns (away_*)
+        
+        Returns:
+            Dict with prediction and probability
+        """
+        if self.model is None:
+            raise ValueError("Model not trained. Call train_model() first.")
+        
+        # Prepare features
+        features = pd.DataFrame([{
+            'home_wins': home_team_stats.get('wins', 0),
+            'home_losses': home_team_stats.get('losses', 0),
+            'home_win_pct': home_team_stats.get('win_pct', 0),
+            'home_avg_points_scored': home_team_stats.get('avg_points_scored', 0),
+            'home_avg_points_allowed': home_team_stats.get('avg_points_allowed', 0),
+            'away_wins': away_team_stats.get('wins', 0),
+            'away_losses': away_team_stats.get('losses', 0),
+            'away_win_pct': away_team_stats.get('win_pct', 0),
+            'away_avg_points_scored': away_team_stats.get('avg_points_scored', 0),
+            'away_avg_points_allowed': away_team_stats.get('avg_points_allowed', 0)
+        }])
+        
+        # Predict
+        prediction = self.model.predict(features)[0]
+        probability = self.model.predict_proba(features)[0]
+        
+        return {
+            'home_win_predicted': bool(prediction),
+            'home_win_probability': probability[1],
+            'away_win_probability': probability[0]
+        }
 
 if __name__ == "__main__":
-    main()
+    # Train model on historical data
+    predictor = NFLGamePredictor()
+    
+    # Initial training (2022-2024 only)
+    accuracy = predictor.train_model([2022, 2023, 2024])
+    
+    # Save the model
+    predictor.save_model()
+    
+    print("\n" + "=" * 70)
+    print("Training complete! Model ready for predictions.")
+    print("=" * 70)

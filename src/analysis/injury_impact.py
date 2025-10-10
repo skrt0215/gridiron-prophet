@@ -10,6 +10,10 @@ class InjuryImpactAnalyzer:
     def __init__(self):
         self.db = DatabaseManager()
         
+        # Minimum snap percentage to be considered a meaningful contributor
+        # Players below this threshold are likely inactive/emergency/practice squad
+        self.MIN_SNAP_THRESHOLD = 0.15  # 15% of snaps
+        
         # Position importance weights (0-1 scale)
         self.position_weights = {
             'QB': 1.0,      # Quarterback - most critical
@@ -48,6 +52,7 @@ class InjuryImpactAnalyzer:
         Calculate player importance based on snap counts
         Returns value 0-1 (1 = starter with high snap count)
         """
+        # First try to get snap data
         query = """
             SELECT AVG(snap_percentage) as avg_snaps, MIN(depth_order) as depth
             FROM depth_charts
@@ -56,23 +61,49 @@ class InjuryImpactAnalyzer:
         """
         result = self.db.execute_query(query, (player_id,))
         
-        if not result or not result[0]['avg_snaps']:
-            # No snap data = never played, minimal importance
-            return 0.1
+        if result and result[0]['avg_snaps']:
+            avg_snaps = float(result[0]['avg_snaps'])
+            depth = result[0]['depth']
+            
+            # Snap count factor (already in percentage format 0-100)
+            snap_factor = min(avg_snaps / 100.0, 1.0)
+            
+            # Bonus for being listed higher on depth chart
+            depth_bonus = 0.0
+            if depth and depth <= 5:
+                depth_bonus = (6 - depth) * 0.1
+            
+            importance = min(snap_factor + depth_bonus, 1.0)
+            return importance
         
-        avg_snaps = float(result[0]['avg_snaps'])
-        depth = result[0]['depth']
+        # FALLBACK: If no snap data, check if they're on depth chart at all
+        depth_query = """
+            SELECT depth_order as depth, position
+            FROM depth_charts
+            WHERE player_id = %s
+            ORDER BY depth_order ASC
+            LIMIT 1
+            """
+        depth_result = self.db.execute_query(depth_query, (player_id,))
         
-        # Snap count factor
-        snap_factor = min(avg_snaps / 100.0, 1.0)  # Convert percentage to 0-1
+        if depth_result and depth_result[0]['depth']:
+            depth = depth_result[0]['depth']
+            position = depth_result[0]['position']
+            
+            # Starters (depth 1-2) get high importance even without snap data
+            if depth == 1:
+                if position == 'QB':
+                    return 1.0  # Starting QB always critical
+                return 0.85  # Other starters
+            elif depth == 2:
+                return 0.7  # Backup
+            elif depth <= 5:
+                return 0.5
+            else:
+                return 0.3
         
-        # Bonus for being listed higher on depth chart
-        depth_bonus = 0.0
-        if depth and depth <= 5:
-            depth_bonus = (6 - depth) * 0.1  # First 5 positions get bonus
-        
-        importance = min(snap_factor + depth_bonus, 1.0)
-        return importance
+        # Last resort: assume minimal importance
+        return 0.3
     
     def calculate_injury_impact(self, player_id, position, injury_status):
         """
@@ -98,7 +129,7 @@ class InjuryImpactAnalyzer:
         Calculate total injury impact for a team
         Returns dict with total score and breakdown
         """
-        # FIXED: Join through player_seasons to get team association
+        # Join through player_seasons to get team association
         query = """
             SELECT i.*, p.name as player_name, ps.position, p.player_id
             FROM injuries i
@@ -124,8 +155,18 @@ class InjuryImpactAnalyzer:
         total_impact = 0
         critical_injuries = []
         injury_details = []
+        skipped_count = 0
         
         for injury in injuries:
+            # Get player importance FIRST to filter out inactive/emergency players
+            player_importance = self.get_player_importance(injury['player_id'])
+            
+            # FILTER: Skip players who don't contribute meaningfully
+            # This filters out emergency QB3s, practice squad players, inactive players
+            if player_importance < self.MIN_SNAP_THRESHOLD:
+                skipped_count += 1
+                continue
+            
             impact = self.calculate_injury_impact(
                 injury['player_id'],
                 injury['position'],
@@ -139,7 +180,8 @@ class InjuryImpactAnalyzer:
                 'position': injury['position'],
                 'status': injury['injury_status'],
                 'body_part': injury.get('body_part', 'Unknown'),
-                'impact_score': impact
+                'impact_score': impact,
+                'snap_importance': player_importance  # Add for debugging
             }
             
             injury_details.append(injury_info)
@@ -154,7 +196,8 @@ class InjuryImpactAnalyzer:
         return {
             'team': team_abbr,
             'total_impact': round(total_impact, 2),
-            'injury_count': len(injuries),
+            'injury_count': len(injury_details),
+            'skipped_inactive': skipped_count,  # For debugging
             'critical_injuries': critical_injuries,
             'injuries': injury_details
         }
@@ -175,6 +218,8 @@ class InjuryImpactAnalyzer:
         
         # Home team injuries
         print(f"\n{home_team} Injuries (Total Impact: {home_impact['total_impact']})")
+        if home_impact['skipped_inactive'] > 0:
+            print(f"  (Skipped {home_impact['skipped_inactive']} inactive/emergency players)")
         print("-"*70)
         for inj in home_impact['injuries'][:10]:  # Top 10
             critical = "⚠️ CRITICAL" if inj in home_impact['critical_injuries'] else ""
@@ -183,6 +228,8 @@ class InjuryImpactAnalyzer:
         
         # Away team injuries
         print(f"\n{away_team} Injuries (Total Impact: {away_impact['total_impact']})")
+        if away_impact['skipped_inactive'] > 0:
+            print(f"  (Skipped {away_impact['skipped_inactive']} inactive/emergency players)")
         print("-"*70)
         for inj in away_impact['injuries'][:10]:  # Top 10
             critical = "⚠️ CRITICAL" if inj in away_impact['critical_injuries'] else ""
@@ -227,13 +274,17 @@ class InjuryImpactAnalyzer:
         teams = self.db.get_all_teams()
         
         team_impacts = []
+        total_skipped = 0
+        
         for team in teams:
             impact = self.get_team_injury_impact(team['abbreviation'], season)
             team_impacts.append(impact)
+            total_skipped += impact.get('skipped_inactive', 0)
         
         # Sort by total impact (most impacted first)
         team_impacts.sort(key=lambda x: x['total_impact'], reverse=True)
         
+        print(f"\nFiltered out {total_skipped} inactive/emergency players across all teams")
         print("\nTEAMS BY INJURY SEVERITY:")
         print("-"*70)
         for idx, team in enumerate(team_impacts, 1):

@@ -30,11 +30,20 @@ class MasterBettingPredictor:
         self.odds_api_key = os.getenv('ODDS_API_KEY')
         self.ml_trained = False
         
-    def train_ml_model(self):
-        """Train ML model on historical data if not already trained"""
+    def train_ml_model(self, max_week_2025=None):
+        """
+        Train ML model on historical data if not already trained
+        
+        Args:
+            max_week_2025: If provided, includes 2025 games up to this week
+        """
         if not self.ml_trained:
-            print("\n🤖 Training ML Model on Historical Data (2022-2024)...")
-            self.ml_predictor.train_model([2022, 2023, 2024])
+            if max_week_2025:
+                print(f"\n🤖 Training ML Model on 2022-2024 + 2025 (through Week {max_week_2025})...")
+                self.ml_predictor.train_model([2022, 2023, 2024, 2025], max_week_2025=max_week_2025)
+            else:
+                print("\n🤖 Training ML Model on Historical Data (2022-2024)...")
+                self.ml_predictor.train_model([2022, 2023, 2024])
             self.ml_trained = True
             print("✓ ML Model Ready\n")
     
@@ -457,4 +466,15 @@ class MasterBettingPredictor:
 
 if __name__ == "__main__":
     predictor = MasterBettingPredictor()
+    
+    # For weekly retraining after games complete:
+    # Set completed_week to the last finished week (e.g., 6 after Week 6 completes)
+    # Leave as None for pre-season or to use historical model only
+    completed_week = None  # Change to 6, 7, 8, etc. after each week finishes
+    
+    if completed_week:
+        print(f"📊 Using 2025 data through Week {completed_week} for training")
+        predictor.train_ml_model(max_week_2025=completed_week)
+    
+    # Analyze the NEXT week (Week 7 if Week 6 just finished)
     predictor.analyze_week(season=2025, week=6)
