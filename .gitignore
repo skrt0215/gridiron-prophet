@@ -21,26 +21,20 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
-
+start_ngrok.py
 .venv/
 venv/
-
 .vscode/
 .idea/
 *.swp
 *.swo
 *~
-
 *.db
 *.sqlite
 *.sqlite3
-
 .env
-
-# OS
 .DS_Store
 Thumbs.db
-
 reports/
 *.pkl
 *.pickle
