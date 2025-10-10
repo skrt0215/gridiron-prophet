@@ -28,8 +28,7 @@ source venv/bin/activate
 
 # Check if all dependencies are installed
 echo "📦 Checking dependencies..."
-pip install -q streamlit pandas numpy scikit-learn requests pymysql python-dotenv beautifulsoup4 nfl-data-py lxml html5lib pyngrok 2>/dev/null
-echo "✅ Dependencies ready!"
+pip install -q streamlit pandas numpy scikit-learn requests pymysql cryptography python-dotenv beautifulsoup4 nfl-data-py lxml html5lib pyngrok 2>/dev/nullecho "✅ Dependencies ready!"
 
 # Kill any existing streamlit processes on port 8501
 echo "Checking for existing processes on port 8501..."
