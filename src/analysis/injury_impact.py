@@ -35,10 +35,12 @@ class InjuryImpactAnalyzer:
         
         # Injury status severity multipliers
         self.status_multipliers = {
-            'Out': 1.0,              # Definitely not playing
-            'Injured Reserve': 1.0,  # Out for extended period
-            'Doubtful': 0.8,         # Very unlikely to play
-            'Questionable': 0.4,     # 50/50 chance
+            'Out': 1.0,       # Definitely not playing
+            'IR': 1.0,        # Injured Reserve - out for extended period
+            'Doubtful': 0.8,  # Very unlikely to play
+            'Questionable': 0.4,  # 50/50 chance
+            'PUP': 0.9,       # Physically Unable to Perform
+            'NFI': 0.9,       # Non-Football Injury list
         }
     
     def get_player_importance(self, player_id):
@@ -62,7 +64,7 @@ class InjuryImpactAnalyzer:
         depth = result[0]['depth']
         
         # Snap count factor
-        snap_factor = min(avg_snaps, 1.0)
+        snap_factor = min(avg_snaps / 100.0, 1.0)  # Convert percentage to 0-1
         
         # Bonus for being listed higher on depth chart
         depth_bonus = 0.0
@@ -96,16 +98,19 @@ class InjuryImpactAnalyzer:
         Calculate total injury impact for a team
         Returns dict with total score and breakdown
         """
+        # FIXED: Join through player_seasons to get team association
         query = """
-            SELECT i.*, p.name as player_name, p.position, p.player_id
+            SELECT i.*, p.name as player_name, ps.position, p.player_id
             FROM injuries i
             JOIN players p ON i.player_id = p.player_id
-            JOIN teams t ON p.team_id = t.team_id
+            JOIN player_seasons ps ON p.player_id = ps.player_id AND i.season = ps.season
+            JOIN teams t ON ps.team_id = t.team_id
             WHERE t.abbreviation = %s
-            AND i.injury_status IN ('Out', 'Doubtful', 'Questionable', 'Injured Reserve')
+            AND i.season = %s
+            AND i.injury_status IN ('Out', 'Doubtful', 'Questionable', 'IR', 'PUP', 'NFI')
         """
         
-        injuries = self.db.execute_query(query, (team_abbr,))
+        injuries = self.db.execute_query(query, (team_abbr, season))
         
         if not injuries:
             return {
@@ -133,14 +138,14 @@ class InjuryImpactAnalyzer:
                 'player': injury['player_name'],
                 'position': injury['position'],
                 'status': injury['injury_status'],
-                'body_part': injury['body_part'],
+                'body_part': injury.get('body_part', 'Unknown'),
                 'impact_score': impact
             }
             
             injury_details.append(injury_info)
             
             # Flag critical injuries (QB or high impact score)
-            if injury['position'] == 'QB' or impact >= 4.0:  # Lower threshold
+            if injury['position'] == 'QB' or impact >= 4.0:
                 critical_injuries.append(injury_info)
         
         # Sort injuries by impact
@@ -154,13 +159,13 @@ class InjuryImpactAnalyzer:
             'injuries': injury_details
         }
     
-    def compare_matchup_injuries(self, home_team, away_team):
+    def compare_matchup_injuries(self, home_team, away_team, season=2025):
         """
         Compare injury impact between two teams for a matchup
         Returns advantage analysis
         """
-        home_impact = self.get_team_injury_impact(home_team)
-        away_impact = self.get_team_injury_impact(away_team)
+        home_impact = self.get_team_injury_impact(home_team, season)
+        away_impact = self.get_team_injury_impact(away_team, season)
         
         impact_diff = away_impact['total_impact'] - home_impact['total_impact']
         
@@ -223,7 +228,7 @@ class InjuryImpactAnalyzer:
         
         team_impacts = []
         for team in teams:
-            impact = self.get_team_injury_impact(team['abbreviation'])
+            impact = self.get_team_injury_impact(team['abbreviation'], season)
             team_impacts.append(impact)
         
         # Sort by total impact (most impacted first)
