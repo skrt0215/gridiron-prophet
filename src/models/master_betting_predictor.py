@@ -197,6 +197,8 @@ class MasterBettingPredictor:
         3. Historical trends
         4. Injury impact (weighted by snap counts)
         5. Home field advantage
+        
+        Returns prediction with BOTH point margin and betting line format
         """
         
         home_current = self.get_team_current_stats(home_team, season, week)
@@ -212,27 +214,39 @@ class MasterBettingPredictor:
         
         prediction_components = {}
         
+        # ML model contribution
         ml_spread_contribution = (ml_home_win_prob - 0.5) * 20
         prediction_components['ml_model'] = ml_spread_contribution
         
+        # Current record
         home_games = int(home_current['wins']) + int(home_current['losses'])
         away_games = int(away_current['wins']) + int(away_current['losses'])
         current_record_diff = (int(home_current['wins'])/max(home_games, 1)) - (int(away_current['wins'])/max(away_games, 1))
         prediction_components['current_record'] = current_record_diff * 8
         
+        # Historical trends
         prediction_components['historical_trend'] = (float(home_historical['historical_win_pct']) - float(away_historical['historical_win_pct'])) * 5
         
+        # Offensive power
         prediction_components['offensive_power'] = (float(home_current['avg_points_scored']) - float(away_current['avg_points_scored'])) * 0.3
         
+        # Defensive strength
         prediction_components['defensive_strength'] = (float(away_current['avg_points_allowed']) - float(home_current['avg_points_allowed'])) * 0.3
         
+        # Injury impact
         injury_diff = float(away_injury['total_impact']) - float(home_injury['total_impact'])
         prediction_components['injury_impact'] = injury_diff * 0.3
         
+        # Home field advantage
         prediction_components['home_field'] = 2.5
         
-        final_predicted_spread = sum(prediction_components.values())
+        # Calculate predicted MARGIN (positive = home wins by X)
+        predicted_margin = sum(prediction_components.values())
         
+        # Convert to BETTING LINE format (negative = favorite)
+        model_betting_line = -predicted_margin
+        
+        # Calculate confidence
         confidence_score = 0
         if abs(ml_spread_contribution) > 5:
             confidence_score += 30
@@ -257,7 +271,8 @@ class MasterBettingPredictor:
             'away_team': away_team,
             'home_record': f"{int(home_current['wins'])}-{int(home_current['losses'])}",
             'away_record': f"{int(away_current['wins'])}-{int(away_current['losses'])}",
-            'predicted_spread': final_predicted_spread,
+            'predicted_margin': predicted_margin,  # Point margin (for display)
+            'model_betting_line': model_betting_line,  # Betting line format
             'ml_home_win_probability': ml_home_win_prob,
             'confidence': confidence,
             'confidence_score': confidence_score,
@@ -356,7 +371,7 @@ class MasterBettingPredictor:
             print(f"Historical Trends: {away} ({prediction['historical']['away_trend']}) | {home} ({prediction['historical']['home_trend']})")
             
             print(f"\n🎯 PREDICTION:")
-            print(f"   Model Spread: {home} {prediction['predicted_spread']:+.1f}")
+            print(f"   Model Spread: {home} {prediction['model_betting_line']:+.1f}")
             print(f"   ML Win Probability: {home} {prediction['ml_home_win_probability']:.1%}")
             print(f"   Confidence: {prediction['confidence']} ({prediction['confidence_score']}/100)")
             
@@ -372,11 +387,35 @@ class MasterBettingPredictor:
                 dk_spread = dk_lines['spread']
                 print(f"\n💰 DraftKings Line: {home} {dk_spread:+.1f}")
                 
-                edge = prediction['predicted_spread'] - dk_spread
+                # Calculate edge: model_betting_line vs dk_spread
+                # Negative edge = model thinks home is BETTER than Vegas
+                # Positive edge = model thinks away is BETTER than Vegas
+                edge = prediction['model_betting_line'] - dk_spread
                 print(f"   EDGE: {edge:+.1f} points")
                 
                 if abs(edge) >= 3.0:
-                    recommended_bet = f"{home} {dk_spread:+.1f}" if edge > 0 else f"{away} {-dk_spread:+.1f}"
+                    # Determine which side to bet
+                    if edge < 0:
+                        # Model thinks HOME is better than Vegas thinks
+                        # Bet HOME with the Vegas line
+                        if dk_spread > 0:
+                            recommended_bet = f"{home} +{dk_spread}"
+                        elif dk_spread < 0:
+                            recommended_bet = f"{home} {dk_spread}"
+                        else:
+                            recommended_bet = f"{home} PK"
+                        bet_team = home
+                    else:
+                        # Model thinks AWAY is better than Vegas thinks
+                        # Bet AWAY with the inverse of Vegas line
+                        if dk_spread < 0:
+                            recommended_bet = f"{away} +{abs(dk_spread)}"
+                        elif dk_spread > 0:
+                            recommended_bet = f"{away} {-dk_spread}"
+                        else:
+                            recommended_bet = f"{away} PK"
+                        bet_team = away
+                    
                     strength = "🔥 STRONG" if abs(edge) >= 5 else "⚡ MODERATE"
                     
                     print(f"\n{strength} BET RECOMMENDATION:")

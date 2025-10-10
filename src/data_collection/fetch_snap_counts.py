@@ -71,10 +71,13 @@ def fetch_snap_counts(seasons):
             defense_snaps = row.get('defense_snaps', 0) or 0
             st_snaps = row.get('st_snaps', 0) or 0
             
+            # FIX: nfl_data_py returns percentages as decimals (0.0-1.0)
+            # We need to convert to percentage format (0-100)
             offense_pct = row.get('offense_pct', 0) or 0
             defense_pct = row.get('defense_pct', 0) or 0
             
-            snap_percentage = max(offense_pct, defense_pct)
+            # Convert from decimal to percentage (multiply by 100)
+            snap_percentage = max(offense_pct, defense_pct) * 100
             
             existing = db.execute_query("""
                 SELECT depth_chart_id FROM depth_charts
@@ -134,24 +137,31 @@ def fetch_snap_counts(seasons):
               f"avg snap % = {row['avg_snap_pct']:.1f}%")
     
     print("\nTop 10 Players by Average Snap % (2024):")
+    
+    # FIX: SQL GROUP BY issue - use subquery for team abbreviation
     top_players = db.execute_query("""
-        SELECT p.name, p.position, t.abbreviation as team,
+        SELECT p.name, p.position, 
+               (SELECT t.abbreviation 
+                FROM teams t 
+                JOIN player_seasons ps ON t.team_id = ps.team_id 
+                WHERE ps.player_id = p.player_id AND ps.season = 2024 
+                LIMIT 1) as team,
                AVG(dc.snap_percentage) as avg_snaps,
                COUNT(*) as weeks_played
         FROM depth_charts dc
         JOIN players p ON dc.player_id = p.player_id
-        JOIN teams t ON dc.team_id = t.team_id
         WHERE dc.season = 2024 AND dc.snap_percentage > 0
-        GROUP BY dc.player_id
+        GROUP BY p.player_id, p.name, p.position
         HAVING weeks_played >= 5
         ORDER BY avg_snaps DESC
         LIMIT 10
     """)
     
     for player in top_players:
-        print(f"  {player['name']:25} ({player['position']}) {player['team']} - "
+        team_display = player['team'] if player['team'] else 'N/A'
+        print(f"  {player['name']:25} ({player['position']}) {team_display} - "
               f"{player['avg_snaps']:.1f}% over {player['weeks_played']} weeks")
 
 if __name__ == "__main__":
-    seasons = [2022, 2023, 2024]
+    seasons = [2022, 2023, 2024, 2025]
     fetch_snap_counts(seasons)

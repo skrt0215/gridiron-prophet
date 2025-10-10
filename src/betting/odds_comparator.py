@@ -169,19 +169,63 @@ class OddsComparator:
             # Ensure all features exist
             features_df = pd.DataFrame([feature_dict])[self.feature_columns].fillna(0)
             
-            # Predict spread
-            predicted_spread = self.model.predict(features_df)[0]
+            # Predict spread (returns point margin: positive = home wins by X)
+            predicted_margin = self.model.predict(features_df)[0]
+            
+            # Convert to betting line convention (negative = favorite)
+            # If home team predicted to win by 3, betting line is HOME -3
+            model_betting_line = -predicted_margin
+            
+            # Calculate edge: 
+            # Negative edge = model thinks home team is BETTER than Vegas thinks
+            # Positive edge = model thinks away team is BETTER than Vegas thinks
+            edge = model_betting_line - game['vegas_spread']
+            
+            # Determine recommended bet
+            home_name = home_team[0]['name']
+            away_name = away_team[0]['name']
+            vegas_line = game['vegas_spread']
+            
+            if abs(edge) >= 3.0:  # Only recommend if significant edge
+                if edge < 0:
+                    # Model thinks home team is BETTER than Vegas thinks
+                    # Example: Model has HOME -3, Vegas has HOME +2 → edge = -5
+                    # Bet HOME team
+                    if vegas_line > 0:
+                        recommended_bet = f"{home_name} +{vegas_line}"
+                    elif vegas_line < 0:
+                        recommended_bet = f"{home_name} {vegas_line}"
+                    else:
+                        recommended_bet = f"{home_name} PK"
+                    recommended_side = "home"
+                else:
+                    # Model thinks away team is BETTER than Vegas thinks
+                    # Example: Model has HOME -10, Vegas has HOME -3 → edge = -7
+                    # Bet AWAY team
+                    if vegas_line < 0:
+                        recommended_bet = f"{away_name} +{abs(vegas_line)}"
+                    elif vegas_line > 0:
+                        recommended_bet = f"{away_name} {-vegas_line}"
+                    else:
+                        recommended_bet = f"{away_name} PK"
+                    recommended_side = "away"
+            else:
+                recommended_bet = "PASS"
+                recommended_side = None
             
             pred_dict = {
-                'home_team': home_team[0]['name'],
-                'away_team': away_team[0]['name'],
+                'home_team': home_name,
+                'away_team': away_name,
                 'home_team_id': home_id,
                 'away_team_id': away_id,
-                'predicted_spread': predicted_spread,
-                'vegas_spread': game['vegas_spread'],
-                'edge': predicted_spread - game['vegas_spread'],
+                'model_betting_line': model_betting_line,
+                'predicted_margin': predicted_margin,  # Keep for reference
+                'vegas_spread': vegas_line,
+                'edge': edge,
                 'vegas_total': game['vegas_total'],
-                'commence_time': game['commence_time']
+                'commence_time': game['commence_time'],
+                'recommended_bet': recommended_bet,
+                'recommended_side': recommended_side
             }
             
             # Add confidence score
@@ -218,9 +262,9 @@ class OddsComparator:
     def find_betting_opportunities(self, predictions, min_edge=3.0):
         """Find games where model disagrees significantly with Vegas"""
         
-        print("\n" + "=" * 70)
+        print("\n" + "=" * 80)
         print("BETTING OPPORTUNITIES - MODEL vs VEGAS")
-        print("=" * 70)
+        print("=" * 80)
         
         opportunities = [p for p in predictions if abs(p['edge']) >= min_edge]
         
@@ -236,20 +280,19 @@ class OddsComparator:
             edge_str = f"+{edge:.1f}" if edge > 0 else f"{edge:.1f}"
             
             marker = "🔥" if abs(edge) >= min_edge else "  "
-            confidence_emoji = {'HIGH': '🔥', 'MEDIUM': '⚡', 'LOW': '💡'}
+            confidence_emoji = {'HIGH': '🟢', 'MEDIUM': '🟡', 'LOW': '🔴'}
             conf_marker = confidence_emoji.get(pred['confidence'], '')
             
             print(f"{marker} {pred['away_team']:25s} @ {pred['home_team']:25s} {conf_marker}")
-            print(f"   Vegas Spread: {pred['vegas_spread']:+.1f}")
-            print(f"   Model Spread: {pred['predicted_spread']:+.1f}")
-            print(f"   Edge: {edge_str} points")
-            print(f"   Confidence: {pred['confidence']}")
+            print(f"   Vegas Line (Home):     {pred['vegas_spread']:+.1f}")
+            print(f"   Model Line (Home):     {pred['model_betting_line']:+.1f}")
+            print(f"   Edge:                  {edge_str} points")
+            print(f"   Confidence:            {pred['confidence']}")
             
             if abs(edge) >= min_edge:
-                if edge > 0:
-                    print(f"   → RECOMMENDATION: Bet {pred['home_team']} to cover")
-                else:
-                    print(f"   → RECOMMENDATION: Bet {pred['away_team']} to cover")
+                print(f"   → RECOMMENDATION:      BET {pred['recommended_bet']}")
+            else:
+                print(f"   → RECOMMENDATION:      PASS (edge too small)")
             print()
         
         return opportunities
@@ -257,9 +300,9 @@ class OddsComparator:
 def main():
     comparator = OddsComparator()
     
-    print("=" * 70)
+    print("=" * 80)
     print("GRIDIRON PROPHET - LIVE ODDS COMPARISON")
-    print("=" * 70)
+    print("=" * 80)
     
     # Fetch current odds
     odds_data = comparator.fetch_current_odds()
@@ -292,19 +335,14 @@ def main():
             from datetime import datetime
             game_date = datetime.fromisoformat(pred['commence_time'].replace('Z', '+00:00')).date()
             
-            recommendation = ""
-            if abs(pred['edge']) >= 3.0:
-                if pred['edge'] > 0:
-                    recommendation = f"Bet {pred['home_team']} to cover"
-                else:
-                    recommendation = f"Bet {pred['away_team']} to cover"
+            recommendation = pred['recommended_bet']
             
             comparator.roi_tracker.log_prediction({
                 'season': season,
                 'week': week,
                 'home_team_id': pred['home_team_id'],
                 'away_team_id': pred['away_team_id'],
-                'predicted_spread': pred['predicted_spread'],
+                'predicted_spread': pred['model_betting_line'],
                 'vegas_spread': pred['vegas_spread'],
                 'edge': pred['edge'],
                 'confidence_level': pred['confidence'],
@@ -316,14 +354,14 @@ def main():
     
     print("✓ Predictions logged")
     
-    print("\n" + "=" * 70)
+    print("\n" + "=" * 80)
     if opportunities:
         print(f"✓ Found {len(opportunities)} strong betting opportunities!")
         print("\nTo track results, run after games complete:")
         print("  python3 src/betting/update_results.py")
     else:
         print("No strong edges this week. The market is efficient.")
-    print("=" * 70)
+    print("=" * 80)
 
 if __name__ == "__main__":
     main()
