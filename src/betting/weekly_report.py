@@ -26,7 +26,6 @@ class WeeklyReportGenerator:
         report.append(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')}")
         report.append("=" * 70)
         
-        # Fetch current odds
         odds_data = self.comparator.fetch_current_odds()
         
         if not odds_data:
@@ -36,7 +35,6 @@ class WeeklyReportGenerator:
         games = self.comparator.parse_odds_data(odds_data)
         predictions = self.comparator.generate_model_predictions(games, season, week)
         
-        # Find opportunities
         opportunities = [p for p in predictions if abs(p['edge']) >= 3.0]
         
         report.append(f"\n📊 WEEK {week} OVERVIEW")
@@ -62,7 +60,6 @@ class WeeklyReportGenerator:
         else:
             report.append("\n   No strong edges found this week.")
         
-        # Season performance
         performance = self.roi_tracker.get_performance_report(season)
         
         if not performance.empty:
@@ -134,7 +131,6 @@ def main():
     
     print("\n" + report)
     
-    # Save to file
     generator.save_report(report)
     
     print("\n💡 note: Set up a cron job to run this automatically every Tuesday")

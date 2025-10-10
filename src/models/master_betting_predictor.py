@@ -223,39 +223,29 @@ class MasterBettingPredictor:
         
         prediction_components = {}
         
-        # ML model contribution
         ml_spread_contribution = (ml_home_win_prob - 0.5) * 20
         prediction_components['ml_model'] = ml_spread_contribution
-        
-        # Current record
+
         home_games = int(home_current['wins']) + int(home_current['losses'])
         away_games = int(away_current['wins']) + int(away_current['losses'])
         current_record_diff = (int(home_current['wins'])/max(home_games, 1)) - (int(away_current['wins'])/max(away_games, 1))
         prediction_components['current_record'] = current_record_diff * 8
-        
-        # Historical trends
+
         prediction_components['historical_trend'] = (float(home_historical['historical_win_pct']) - float(away_historical['historical_win_pct'])) * 5
-        
-        # Offensive power
+
         prediction_components['offensive_power'] = (float(home_current['avg_points_scored']) - float(away_current['avg_points_scored'])) * 0.3
-        
-        # Defensive strength
+
         prediction_components['defensive_strength'] = (float(away_current['avg_points_allowed']) - float(home_current['avg_points_allowed'])) * 0.3
-        
-        # Injury impact
+ 
         injury_diff = float(away_injury['total_impact']) - float(home_injury['total_impact'])
         prediction_components['injury_impact'] = injury_diff * 0.3
         
-        # Home field advantage
         prediction_components['home_field'] = 2.5
         
-        # Calculate predicted MARGIN (positive = home wins by X)
         predicted_margin = sum(prediction_components.values())
         
-        # Convert to BETTING LINE format (negative = favorite)
         model_betting_line = -predicted_margin
         
-        # Calculate confidence
         confidence_score = 0
         if abs(ml_spread_contribution) > 5:
             confidence_score += 30
@@ -280,8 +270,8 @@ class MasterBettingPredictor:
             'away_team': away_team,
             'home_record': f"{int(home_current['wins'])}-{int(home_current['losses'])}",
             'away_record': f"{int(away_current['wins'])}-{int(away_current['losses'])}",
-            'predicted_margin': predicted_margin,  # Point margin (for display)
-            'model_betting_line': model_betting_line,  # Betting line format
+            'predicted_margin': predicted_margin,
+            'model_betting_line': model_betting_line,
             'ml_home_win_probability': ml_home_win_prob,
             'confidence': confidence,
             'confidence_score': confidence_score,
@@ -395,18 +385,11 @@ class MasterBettingPredictor:
             if dk_lines and dk_lines['spread'] is not None:
                 dk_spread = dk_lines['spread']
                 print(f"\n💰 DraftKings Line: {home} {dk_spread:+.1f}")
-                
-                # Calculate edge: model_betting_line vs dk_spread
-                # Negative edge = model thinks home is BETTER than Vegas
-                # Positive edge = model thinks away is BETTER than Vegas
                 edge = prediction['model_betting_line'] - dk_spread
                 print(f"   EDGE: {edge:+.1f} points")
                 
                 if abs(edge) >= 3.0:
-                    # Determine which side to bet
                     if edge < 0:
-                        # Model thinks HOME is better than Vegas thinks
-                        # Bet HOME with the Vegas line
                         if dk_spread > 0:
                             recommended_bet = f"{home} +{dk_spread}"
                         elif dk_spread < 0:
@@ -415,8 +398,6 @@ class MasterBettingPredictor:
                             recommended_bet = f"{home} PK"
                         bet_team = home
                     else:
-                        # Model thinks AWAY is better than Vegas thinks
-                        # Bet AWAY with the inverse of Vegas line
                         if dk_spread < 0:
                             recommended_bet = f"{away} +{abs(dk_spread)}"
                         elif dk_spread > 0:
@@ -460,21 +441,14 @@ class MasterBettingPredictor:
             print(f"{'=' * 80}")
         
         self.save_weekly_report(season, week, recommendations)
-        
+
         print(f"\n💡 Analysis complete! Good luck! 🍀")
         print(f"{'=' * 80}\n")
 
 if __name__ == "__main__":
     predictor = MasterBettingPredictor()
-    
-    # For weekly retraining after games complete:
-    # Set completed_week to the last finished week (e.g., 6 after Week 6 completes)
-    # Leave as None for pre-season or to use historical model only
-    completed_week = None  # Change to 6, 7, 8, etc. after each week finishes
-    
+    completed_week = None
     if completed_week:
         print(f"📊 Using 2025 data through Week {completed_week} for training")
         predictor.train_ml_model(max_week_2025=completed_week)
-    
-    # Analyze the NEXT week (Week 7 if Week 6 just finished)
     predictor.analyze_week(season=2025, week=6)

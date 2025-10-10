@@ -80,20 +80,16 @@ class AdvancedNFLPredictor:
             GROUP BY position
         """
         results = self.db.execute_query(query, (team_id, season, week))
-        
         snap_dict = {}
         for row in results:
             pos = row['position']
             snap_dict[f'{pos}_avg_snap'] = row['avg_snap_pct'] or 0
             snap_dict[f'{pos}_max_snap'] = row['max_snap_pct'] or 0
-        
         return snap_dict
     
     def build_features(self, seasons):
         """Build comprehensive feature set"""
         print("Building advanced feature set...")
-        
-        # Get all completed games
         games_query = """
             SELECT 
                 g.game_id, g.season, g.week,
@@ -112,75 +108,51 @@ class AdvancedNFLPredictor:
         """.format(','.join(['%s'] * len(seasons)))
         
         games = self.db.execute_query(games_query, tuple(seasons))
-        
         features_list = []
         
         for idx, game in enumerate(games):
             if idx % 50 == 0:
                 print(f"  Processing game {idx + 1}/{len(games)}...")
-            
             season = game['season']
             week = game['week']
             home_id = game['home_team_id']
             away_id = game['away_team_id']
-            
-            # Get defensive rankings through previous week
             def_rankings = self.defensive_ranker.get_all_defensive_rankings(season, week - 1)
-            
             home_def = def_rankings[def_rankings['team_id'] == home_id]
             away_def = def_rankings[def_rankings['team_id'] == away_id]
-            
-            # Basic team stats
             home_qb = self.get_team_qb_performance(home_id, season, week)
             away_qb = self.get_team_qb_performance(away_id, season, week)
-            
             home_rush = self.get_team_rushing_performance(home_id, season, week)
             away_rush = self.get_team_rushing_performance(away_id, season, week)
-            
-            # Snap counts
             home_snaps = self.get_key_player_snap_counts(home_id, season, week)
             away_snaps = self.get_key_player_snap_counts(away_id, season, week)
-            
-            # Build feature dict
             feature_dict = {
                 'game_id': game['game_id'],
                 'season': season,
                 'week': week,
-                
-                # Home offense
                 'home_avg_pass_yards': home_qb.get('avg_pass_yards', 0) or 0,
                 'home_avg_pass_tds': home_qb.get('avg_pass_tds', 0) or 0,
                 'home_avg_interceptions': home_qb.get('avg_interceptions', 0) or 0,
                 'home_completion_pct': home_qb.get('completion_pct', 0) or 0,
                 'home_avg_rush_yards': home_rush.get('avg_rush_yards', 0) or 0,
                 'home_avg_rush_tds': home_rush.get('avg_rush_tds', 0) or 0,
-                
-                # Away offense
                 'away_avg_pass_yards': away_qb.get('avg_pass_yards', 0) or 0,
                 'away_avg_pass_tds': away_qb.get('avg_pass_tds', 0) or 0,
                 'away_avg_interceptions': away_qb.get('avg_interceptions', 0) or 0,
                 'away_completion_pct': away_qb.get('completion_pct', 0) or 0,
                 'away_avg_rush_yards': away_rush.get('avg_rush_yards', 0) or 0,
                 'away_avg_rush_tds': away_rush.get('avg_rush_tds', 0) or 0,
-                
-                # Defensive rankings
                 'home_pass_def_rank': home_def.iloc[0]['pass_defense_rank'] if len(home_def) > 0 else 16,
                 'home_run_def_rank': home_def.iloc[0]['run_defense_rank'] if len(home_def) > 0 else 16,
                 'home_overall_def_rank': home_def.iloc[0]['overall_defense_rank'] if len(home_def) > 0 else 16,
-                
                 'away_pass_def_rank': away_def.iloc[0]['pass_defense_rank'] if len(away_def) > 0 else 16,
                 'away_run_def_rank': away_def.iloc[0]['run_defense_rank'] if len(away_def) > 0 else 16,
                 'away_overall_def_rank': away_def.iloc[0]['overall_defense_rank'] if len(away_def) > 0 else 16,
-                
-                # Matchup features
                 'home_pass_vs_away_pass_def': (home_qb.get('avg_pass_yards', 0) or 0) - (away_def.iloc[0]['avg_pass_yards_per_game'] if len(away_def) > 0 else 250),
                 'away_pass_vs_home_pass_def': (away_qb.get('avg_pass_yards', 0) or 0) - (home_def.iloc[0]['avg_pass_yards_per_game'] if len(home_def) > 0 else 250),
-                
-                # Target
                 'home_win': 1 if game['home_score'] > game['away_score'] else 0
             }
             
-            # Add snap count features
             for key in ['QB', 'RB', 'WR', 'TE']:
                 feature_dict[f'home_{key}_snap'] = home_snaps.get(f'{key}_avg_snap', 0)
                 feature_dict[f'away_{key}_snap'] = away_snaps.get(f'{key}_avg_snap', 0)
@@ -194,31 +166,21 @@ class AdvancedNFLPredictor:
         print("=" * 70)
         print("TRAINING ADVANCED NFL PREDICTION MODEL")
         print("=" * 70)
-        
-        # Build features
         features_df = self.build_features(seasons)
         
         print(f"\nTotal games for training: {len(features_df)}")
-        
-        # Define feature columns
         self.feature_columns = [col for col in features_df.columns 
                                if col not in ['game_id', 'season', 'week', 'home_win']]
         
         X = features_df[self.feature_columns]
         y = features_df['home_win']
-        
-        # Fill any NaN values
         X = X.fillna(0)
-        
-        # Split data
         X_train, X_test, y_train, y_test = train_test_split(
             X, y, test_size=0.2, random_state=42, shuffle=False
         )
         
         print(f"Training set: {len(X_train)} games")
         print(f"Test set: {len(X_test)} games")
-        
-        # Train Gradient Boosting model
         print("\nTraining Gradient Boosting model...")
         self.model = GradientBoostingClassifier(
             n_estimators=200,
@@ -228,12 +190,8 @@ class AdvancedNFLPredictor:
         )
         
         self.model.fit(X_train, y_train)
-        
-        # Predictions
         y_pred = self.model.predict(X_test)
         y_pred_proba = self.model.predict_proba(X_test)
-        
-        # Evaluate
         accuracy = accuracy_score(y_test, y_pred)
         
         print("\n" + "=" * 70)
@@ -250,8 +208,6 @@ class AdvancedNFLPredictor:
         print(f"                  Predicted Away | Predicted Home")
         print(f"Actual Away Win:  {cm[0][0]:4d}           {cm[0][1]:4d}")
         print(f"Actual Home Win:  {cm[1][0]:4d}           {cm[1][1]:4d}")
-        
-        # Feature importance
         print("\nTop 15 Most Important Features:")
         importances = pd.DataFrame({
             'feature': self.feature_columns,
@@ -265,8 +221,6 @@ class AdvancedNFLPredictor:
 
 def main():
     predictor = AdvancedNFLPredictor()
-    
-    # Train on 2022-2023 seasons
     seasons = [2022, 2023]
     accuracy = predictor.train_model(seasons)
     

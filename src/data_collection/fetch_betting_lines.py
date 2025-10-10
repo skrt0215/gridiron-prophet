@@ -12,7 +12,7 @@ class BettingLinesFetcher:
     
     def __init__(self, api_key=None):
         self.db = DatabaseManager()
-        self.api_key = api_key  # We'll use a free source instead
+        self.api_key = api_key 
         self.base_url = "https://api.the-odds-api.com/v4"
     
     def add_sample_betting_lines(self, seasons):
@@ -25,8 +25,6 @@ class BettingLinesFetcher:
         print("=" * 70)
         print("ADDING BETTING LINES")
         print("=" * 70)
-        
-        # Get all games
         games_query = """
             SELECT 
                 g.game_id, g.season, g.week,
@@ -50,21 +48,14 @@ class BettingLinesFetcher:
         added_count = 0
         
         for game in games:
-            # Calculate actual point differential
             actual_diff = game['home_score'] - game['away_score']
-            
-            # Simulate Vegas spread (add some noise to actual outcome)
-            # Real Vegas lines are very accurate, so we simulate them being close
+
             import random
             noise = random.uniform(-3, 3)
-            simulated_spread = round((actual_diff + noise) * 2) / 2  # Round to nearest 0.5
-            
-            # Simulate over/under
+            simulated_spread = round((actual_diff + noise) * 2) / 2
             total_points = game['home_score'] + game['away_score']
             ou_noise = random.uniform(-4, 4)
             simulated_over_under = round((total_points + ou_noise) * 2) / 2
-            
-            # Add to database
             try:
                 self.db.add_betting_line(
                     game_id=game['game_id'],
@@ -88,8 +79,6 @@ class BettingLinesFetcher:
         print(f"\n{'=' * 70}")
         print(f"✓ Added {added_count} betting lines")
         print(f"{'=' * 70}")
-        
-        # Show sample
         print("\nSample Betting Lines:")
         sample = self.db.execute_query("""
             SELECT 
@@ -117,9 +106,6 @@ class BettingLinesFetcher:
 
 def main():
     fetcher = BettingLinesFetcher()
-    
-    # Add simulated lines for 2022-2023
-    # NOTE: For production, you'd fetch real historical lines from a data provider
     seasons = [2022, 2023]
     fetcher.add_sample_betting_lines(seasons)
     

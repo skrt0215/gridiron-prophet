@@ -18,8 +18,6 @@ def fetch_historical_games(seasons):
     print("=" * 70)
     print("FETCHING HISTORICAL NFL GAMES")
     print("=" * 70)
-    
-    # Fetch schedule data
     print("\nDownloading schedule data from nfl_data_py...")
     schedule = nfl.import_schedules(seasons)
     
@@ -30,7 +28,6 @@ def fetch_historical_games(seasons):
     
     for _, game in schedule.iterrows():
         try:
-            # Get team IDs
             home_team = db.get_team_by_abbreviation(game['home_team'])
             away_team = db.get_team_by_abbreviation(game['away_team'])
             
@@ -38,8 +35,6 @@ def fetch_historical_games(seasons):
                 print(f"Skipping: Could not find teams {game['away_team']} @ {game['home_team']}")
                 skipped_count += 1
                 continue
-            
-            # Parse game date
             game_date = datetime.strptime(str(game['gameday']), '%Y-%m-%d').date()
             game_time = None
             if 'gametime' in game and game['gametime']:
@@ -48,10 +43,8 @@ def fetch_historical_games(seasons):
                 except:
                     pass
             
-            # Determine game status
             game_status = 'Final' if game['home_score'] is not None else 'Scheduled'
             
-            # Add game to database
             game_id = db.add_game(
                 season=int(game['season']),
                 week=int(game['week']),
@@ -83,8 +76,6 @@ def fetch_historical_games(seasons):
     print(f"✓ Added {added_count} games")
     print(f"- Skipped {skipped_count} games (duplicates or errors)")
     print(f"{'=' * 70}")
-    
-    # Show summary by season
     print("\nDatabase Summary by Season:")
     summary = db.execute_query("""
         SELECT season, COUNT(*) as total_games,
@@ -98,7 +89,5 @@ def fetch_historical_games(seasons):
         print(f"  {row['season']}: {row['total_games']} games ({row['completed']} completed)")
 
 if __name__ == "__main__":
-    # Fetch 2022, 2023, 2024 complete seasons
-    # Note: 2025 season is ongoing, so we'll use the ESPN API for current data
     seasons = [2022, 2023, 2024]
     fetch_historical_games(seasons)

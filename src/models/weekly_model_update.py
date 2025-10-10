@@ -20,7 +20,6 @@ def weekly_model_update(season=2025, completed_week=None):
     print(f"WEEKLY MODEL UPDATE - {season}")
     print("=" * 70)
     
-    # Auto-detect completed week if not provided
     if not completed_week:
         result = db.execute_query("""
             SELECT MAX(week) as last_week
@@ -32,7 +31,6 @@ def weekly_model_update(season=2025, completed_week=None):
     
     print(f"\n✓ Training on all games through Week {completed_week}")
     
-    # Check how many 2025 games are completed
     completed_games = db.execute_query("""
         SELECT COUNT(*) as count
         FROM games
@@ -43,21 +41,17 @@ def weekly_model_update(season=2025, completed_week=None):
     
     print(f"✓ {completed_games[0]['count']} completed games in {season}")
     
-    # Retrain the model
     predictor = NFLGamePredictor()
     
-    # Include 2022-2024 + completed 2025 games
     predictor.train_model(
         seasons=[2022, 2023, 2024, 2025],
         max_week=completed_week
     )
     
-    # Track accuracy on 2025 predictions so far
     print("\n" + "=" * 70)
     print(f"EVALUATING {season} ACCURACY (Weeks 1-{completed_week})")
     print("=" * 70)
     
-    # Get your predictions vs actual results
     accuracy_check = db.execute_query("""
         SELECT 
             p.predicted_winner,
@@ -77,7 +71,6 @@ def weekly_model_update(season=2025, completed_week=None):
         
         print(f"\n{season} Season Accuracy: {correct}/{total} = {accuracy:.2f}%")
         
-        # Breakdown by confidence
         for conf in ['HIGH', 'MEDIUM', 'LOW']:
             conf_preds = [p for p in accuracy_check if p['confidence_level'] == conf]
             if conf_preds:
@@ -91,7 +84,6 @@ def weekly_model_update(season=2025, completed_week=None):
     print(f"✓ Ready to predict Week {completed_week + 1}")
     print("=" * 70)
     
-    # Save training metadata
     db.execute_insert("""
         INSERT INTO model_training_log 
         (training_date, seasons_included, latest_week, total_games, notes)
@@ -105,5 +97,4 @@ def weekly_model_update(season=2025, completed_week=None):
     ))
 
 if __name__ == "__main__":
-    # Auto-update based on latest completed week
     weekly_model_update(season=2025)

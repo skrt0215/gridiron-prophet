@@ -16,8 +16,8 @@ class HistoricalDataFetcher:
     
     def __init__(self):
         self.db = DatabaseManager()
-        self.player_name_to_id = {}  # Cache for name -> player_id lookups
-        self.game_cache = {}  # Cache for game lookups
+        self.player_name_to_id = {}
+        self.game_cache = {}
     
     def get_active_players(self):
         """Get all active 2025 players from database"""
@@ -27,7 +27,6 @@ class HistoricalDataFetcher:
         
         players = self.db.get_active_players_for_season(2025)
         
-        # Build name -> player_id mapping
         for player in players:
             self.player_name_to_id[player['name']] = player['player_id']
         
@@ -43,7 +42,6 @@ class HistoricalDataFetcher:
         print("This may take several minutes...\n")
         
         try:
-            # Fetch weekly player stats for all seasons at once
             stats_df = nfl.import_weekly_data(seasons)
             print(f"✓ Downloaded {len(stats_df)} player-game records")
             return stats_df
@@ -54,13 +52,11 @@ class HistoricalDataFetcher:
     
     def find_or_create_game(self, row, season, week):
         """Find the game_id for this stat, or skip if game doesn't exist"""
-        # Create cache key
         cache_key = f"{season}-{week}-{row.get('recent_team')}-{row.get('opponent_team')}"
         
         if cache_key in self.game_cache:
             return self.game_cache[cache_key]
         
-        # Get team IDs
         recent_team = self.db.get_team_by_abbreviation(row.get('recent_team'))
         opponent_team = self.db.get_team_by_abbreviation(row.get('opponent_team'))
         
@@ -71,7 +67,6 @@ class HistoricalDataFetcher:
         recent_team_id = recent_team['team_id']
         opponent_team_id = opponent_team['team_id']
         
-        # Find game (could be home or away)
         game = self.db.execute_query("""
             SELECT game_id, home_team_id, away_team_id 
             FROM games 
@@ -92,31 +87,26 @@ class HistoricalDataFetcher:
     def process_stat_row(self, row):
         """Process a single stat row and return formatted data"""
         try:
-            # Get player name
             player_name = row.get('player_display_name')
             if not player_name or pd.isna(player_name):
                 return None
             
-            # Only process if this player is in our 2025 active roster
             if player_name not in self.player_name_to_id:
                 return None
             
             player_id = self.player_name_to_id[player_name]
             season = int(row.get('season'))
             week = int(row.get('week'))
-            
-            # Get game_id
             game_id = self.find_or_create_game(row, season, week)
+
             if not game_id:
                 return None
-            
-            # Get team_id
             team = self.db.get_team_by_abbreviation(row.get('recent_team'))
+
             if not team:
                 return None
             team_id = team['team_id']
             
-            # Build stats dictionary (handle NaN/None values)
             def safe_int(val):
                 return int(val) if val and not pd.isna(val) else 0
             
@@ -129,27 +119,19 @@ class HistoricalDataFetcher:
                 'team_id': team_id,
                 'season': season,
                 'week': week,
-                
-                # Passing
                 'pass_attempts': safe_int(row.get('attempts')),
                 'pass_completions': safe_int(row.get('completions')),
                 'pass_yards': safe_int(row.get('passing_yards')),
                 'pass_touchdowns': safe_int(row.get('passing_tds')),
                 'interceptions': safe_int(row.get('interceptions')),
                 'sacks_taken': safe_int(row.get('sacks')),
-                
-                # Rushing
                 'rush_attempts': safe_int(row.get('carries')),
                 'rush_yards': safe_int(row.get('rushing_yards')),
                 'rush_touchdowns': safe_int(row.get('rushing_tds')),
-                
-                # Receiving
                 'targets': safe_int(row.get('targets')),
                 'receptions': safe_int(row.get('receptions')),
                 'receiving_yards': safe_int(row.get('receiving_yards')),
                 'receiving_touchdowns': safe_int(row.get('receiving_tds')),
-                
-                # Defensive stats (nfl_data_py doesn't have these in weekly data)
                 'tackles': 0,
                 'tackles_for_loss': 0,
                 'sacks': 0.0,
@@ -157,8 +139,6 @@ class HistoricalDataFetcher:
                 'fumble_recoveries': 0,
                 'interceptions_defense': 0,
                 'passes_defended': 0,
-                
-                # Misc
                 'fumbles': safe_int(row.get('fumbles')),
                 'fumbles_lost': safe_int(row.get('fumbles_lost')),
             }
@@ -181,7 +161,6 @@ class HistoricalDataFetcher:
         total_rows = len(stats_df)
         
         for idx, row in stats_df.iterrows():
-            # Progress indicator
             if (idx + 1) % 1000 == 0:
                 print(f"  Progress: {idx + 1}/{total_rows} rows processed "
                       f"({added_count} added, {skipped_count} skipped)...")
@@ -193,14 +172,13 @@ class HistoricalDataFetcher:
                 continue
             
             try:
-                # Insert stats (ON DUPLICATE KEY UPDATE will handle duplicates)
                 self.db.add_player_game_stat(**stats)
                 added_count += 1
                 
             except Exception as e:
                 if "Duplicate entry" not in str(e):
                     error_count += 1
-                    if error_count <= 5:  # Only print first 5 errors
+                    if error_count <= 5:
                         print(f"  ✗ Error adding stat: {e}")
                 skipped_count += 1
         
@@ -215,8 +193,7 @@ class HistoricalDataFetcher:
         print("\n" + "="*70)
         print("VERIFICATION - HISTORICAL DATA")
         print("="*70)
-        
-        # Get stats by season
+
         result = self.db.execute_query("""
             SELECT 
                 season,
@@ -240,8 +217,6 @@ class HistoricalDataFetcher:
         
         print("-" * 50)
         print(f"{'TOTAL':<8} {total_records:<12}")
-        
-        # Sample player career stats
         print("\n" + "-"*70)
         print("Sample: Patrick Mahomes Career Stats")
         print("-"*70)
@@ -264,8 +239,6 @@ class HistoricalDataFetcher:
                 print("  No stats found")
         else:
             print("  Player not found in database")
-        
-        # Check for players with no historical stats
         print("\n" + "-"*70)
         print("2025 Active Players Without Historical Stats (likely rookies):")
         print("-"*70)
@@ -298,25 +271,17 @@ class HistoricalDataFetcher:
         print("GRIDIRON PROPHET - HISTORICAL DATA FETCHER")
         print("="*70)
         print(f"\nStarted at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-        
-        # Step 1: Load active 2025 players
         active_players = self.get_active_players()
         
         if not active_players:
             print("\n✗ No active players found. Run init_rosters_2025.py first!")
             return
-        
-        # Step 2: Fetch historical stats (2022-2024)
         stats_df = self.fetch_historical_stats(seasons=[2022, 2023, 2024])
         
         if stats_df is None or len(stats_df) == 0:
             print("\n✗ Failed to fetch historical stats. Aborting.")
             return
-        
-        # Step 3: Process and load into database
         self.load_stats_to_database(stats_df)
-        
-        # Step 4: Verify
         self.verify_historical_data()
         
         print("\n" + "="*70)

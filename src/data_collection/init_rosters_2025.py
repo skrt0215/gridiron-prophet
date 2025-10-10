@@ -15,7 +15,7 @@ class RosterInitializer:
     
     def __init__(self):
         self.db = DatabaseManager()
-        self.player_cache = {}  # Cache player_id lookups
+        self.player_cache = {}
     
     def clear_player_data(self):
         """Clear all player-related data (keeps teams and games)"""
@@ -39,7 +39,6 @@ class RosterInitializer:
         print("\nClearing player data...")
         
         try:
-            # Delete in order due to foreign keys
             self.db.execute_update("DELETE FROM player_game_stats")
             print("  ✓ Cleared player_game_stats")
             
@@ -69,7 +68,6 @@ class RosterInitializer:
         
         status = str(status_str).upper().strip()
         
-        # Map status codes to our categories
         if status in ['ACT', 'ACTIVE', '']:
             return 'Active'
         elif 'PRACTICE' in status or status in ['PRA', 'PS']:
@@ -83,7 +81,6 @@ class RosterInitializer:
         elif 'SUS' in status or 'SUSPEND' in status:
             return 'Suspended'
         else:
-            # Default to Active - we'll verify counts later
             return 'Active'
     
     def fetch_2025_rosters(self):
@@ -94,7 +91,6 @@ class RosterInitializer:
         print("\nDownloading 2025 roster data from nfl_data_py...")
         
         try:
-            # Fetch ONLY 2025 season
             rosters_df = nfl.import_seasonal_rosters([2025])
             print(f"✓ Found {len(rosters_df)} player records for 2025")
             
@@ -117,7 +113,6 @@ class RosterInitializer:
         
         for idx, row in rosters_df.iterrows():
             try:
-                # Get team
                 team_abbr = row.get('team')
                 if not team_abbr or pd.isna(team_abbr):
                     skipped += 1
@@ -130,8 +125,6 @@ class RosterInitializer:
                     continue
                 
                 team_id = team['team_id']
-                
-                # Extract player info
                 name = row.get('player_name') or row.get('full_name')
                 if not name or pd.isna(name):
                     skipped += 1
@@ -141,17 +134,14 @@ class RosterInitializer:
                 if pd.isna(position):
                     position = 'UNK'
                 
-                # Basic info for players table
                 height = row.get('height')
                 weight = row.get('weight')
                 college = row.get('college')
                 
-                # Clean up None/NaN values
                 if pd.isna(height): height = None
                 if pd.isna(weight): weight = None
                 if pd.isna(college): college = None
                 
-                # Add to players table (or get existing)
                 player_id = self.db.get_or_create_player(
                     name=name,
                     position=position,
@@ -164,21 +154,16 @@ class RosterInitializer:
                     added_players += 1
                     self.player_cache[player_id] = name
                 
-                # Season-specific info for player_seasons table
                 jersey = row.get('jersey_number')
                 age = row.get('age')
                 years_exp = row.get('years_exp') or row.get('entry_year')
                 status = row.get('status', '')
                 
-                # Clean up None/NaN values
                 if pd.isna(jersey): jersey = None
                 if pd.isna(age): age = None
                 if pd.isna(years_exp): years_exp = None
                 
-                # Determine roster status
                 roster_status = self.determine_roster_status(status)
-                
-                # Add to player_seasons table
                 self.db.add_player_season(
                     player_id=player_id,
                     season=2025,
@@ -193,7 +178,6 @@ class RosterInitializer:
                 
                 added_seasons += 1
                 
-                # Progress indicator
                 if added_seasons % 100 == 0:
                     print(f"  Progress: {added_seasons} player-seasons processed...")
                 
@@ -218,7 +202,6 @@ class RosterInitializer:
         print("ROSTER VERIFICATION")
         print("="*70)
         
-        # Get roster breakdown by team
         result = self.db.execute_query("""
             SELECT 
                 t.abbreviation,
@@ -247,7 +230,6 @@ class RosterInitializer:
             total_active += r['active']
             total_all += r['total']
             
-            # Flag teams with unusual counts
             if r['total'] == 0:
                 issues.append(f"{r['abbreviation']}: No players found!")
             elif r['active'] < 40:
@@ -268,7 +250,6 @@ class RosterInitializer:
         else:
             print("\n✓ All teams have reasonable roster counts!")
         
-        # Show sample roster
         print("\n" + "-"*60)
         print("Sample: Kansas City Chiefs Active Roster")
         print("-"*60)
@@ -298,20 +279,15 @@ class RosterInitializer:
         print("GRIDIRON PROPHET - 2025 ROSTER INITIALIZATION")
         print("="*70)
         
-        # Step 1: Clear old data
         if not self.clear_player_data():
             return
         
-        # Step 2: Fetch 2025 rosters
         rosters_df = self.fetch_2025_rosters()
         if rosters_df is None or len(rosters_df) == 0:
             print("\n✗ Failed to fetch rosters. Aborting.")
             return
         
-        # Step 3: Process and load data
         self.process_rosters(rosters_df)
-        
-        # Step 4: Verify
         self.verify_rosters()
         
         print("\n" + "="*70)

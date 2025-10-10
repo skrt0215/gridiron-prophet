@@ -65,18 +65,12 @@ def fetch_snap_counts(seasons):
                 skipped_count += 1
                 continue
             
-            player_id = player[0]['player_id']
-            
+            player_id = player[0]['player_id'] 
             offense_snaps = row.get('offense_snaps', 0) or 0
             defense_snaps = row.get('defense_snaps', 0) or 0
             st_snaps = row.get('st_snaps', 0) or 0
-            
-            # FIX: nfl_data_py returns percentages as decimals (0.0-1.0)
-            # We need to convert to percentage format (0-100)
             offense_pct = row.get('offense_pct', 0) or 0
             defense_pct = row.get('defense_pct', 0) or 0
-            
-            # Convert from decimal to percentage (multiply by 100)
             snap_percentage = max(offense_pct, defense_pct) * 100
             
             existing = db.execute_query("""
@@ -138,7 +132,6 @@ def fetch_snap_counts(seasons):
     
     print("\nTop 10 Players by Average Snap % (2024):")
     
-    # FIX: SQL GROUP BY issue - use subquery for team abbreviation
     top_players = db.execute_query("""
         SELECT p.name, p.position, 
                (SELECT t.abbreviation 

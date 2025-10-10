@@ -7,7 +7,7 @@ import pandas as pd
 
 class DefensiveRankings:
     """Calculate and track defensive performance rankings"""
-    
+
     def __init__(self):
         self.db = DatabaseManager()
     
@@ -44,7 +44,6 @@ class DefensiveRankings:
         results = self.db.execute_query(query, (season,))
         df = pd.DataFrame(results)
         
-        # Add rankings
         df['pass_defense_rank'] = range(1, len(df) + 1)
         
         return df
@@ -122,7 +121,6 @@ class DefensiveRankings:
         run_def = self.calculate_run_defense_rankings(season, through_week)
         points_def = self.calculate_points_allowed_rankings(season, through_week)
         
-        # Merge all rankings
         rankings = pass_def[['team_id', 'abbreviation', 'pass_defense_rank', 'avg_pass_yards_per_game']].merge(
             run_def[['team_id', 'run_defense_rank', 'avg_rush_yards_per_game']],
             on='team_id'
@@ -131,7 +129,6 @@ class DefensiveRankings:
             on='team_id'
         )
         
-        # Calculate overall defensive rank (average of three rankings)
         rankings['overall_defense_rank'] = (
             rankings['pass_defense_rank'] + 
             rankings['run_defense_rank'] + 

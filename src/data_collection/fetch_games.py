@@ -62,10 +62,7 @@ class NFLGameFetcher:
     def extract_game_info(self, event, season, week):
         """Extract relevant game information from ESPN event data"""
         
-        # Get competition (the actual game)
         competition = event['competitions'][0]
-        
-        # Get teams
         home_team = None
         away_team = None
         
@@ -85,25 +82,17 @@ class NFLGameFetcher:
         
         if not home_team or not away_team:
             return None
-        
-        # Get team IDs from database
         home_team_id = self.get_team_id_by_abbreviation(home_team['abbreviation'])
         away_team_id = self.get_team_id_by_abbreviation(away_team['abbreviation'])
         
         if not home_team_id or not away_team_id:
             print(f"Warning: Could not find team IDs for {home_team['abbreviation']} vs {away_team['abbreviation']}")
             return None
-        
-        # Get date and time
         game_date_str = event['date']
         game_datetime = datetime.strptime(game_date_str, '%Y-%m-%dT%H:%MZ')
-        
-        # Get venue info
         venue = competition.get('venue', {})
         stadium = venue.get('fullName', '')
         is_dome = venue.get('indoor', False)
-        
-        # Get game status
         status = competition['status']['type']['name']
         game_status = 'Final' if status == 'STATUS_FINAL' else 'Scheduled'
         

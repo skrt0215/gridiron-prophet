@@ -273,8 +273,6 @@ elif analysis_type == "Team Rosters":
     
     with col1:
         selected_team = st.selectbox("Select Team", team_abbrs)
-        
-        # Get team full name
         team_info = next((t for t in teams if t['abbreviation'] == selected_team), None)
         if team_info:
             st.info(f"**{team_info['name']}**")
@@ -282,7 +280,6 @@ elif analysis_type == "Team Rosters":
     with col2:
         if st.button("🔄 Load Roster", type="primary"):
             with st.spinner(f"Loading {selected_team} roster..."):
-                # Query to get roster - Uses player_seasons to show current season only and avoid duplicates
                 query = """
                     SELECT DISTINCT
                         p.name as player_name,
@@ -330,8 +327,6 @@ elif analysis_type == "Team Rosters":
                     
                     if roster:
                         st.success(f"✅ Found {len(roster)} players on {selected_team} roster")
-                        
-                        # Create tabs for different position groups
                         offense_positions = ['QB', 'RB', 'WR', 'TE', 'OL', 'C', 'G', 'T']
                         defense_positions = ['DL', 'DE', 'DT', 'LB', 'DB', 'CB', 'S']
                         special_positions = ['K', 'P', 'LS']
@@ -364,8 +359,6 @@ elif analysis_type == "Team Rosters":
                         
                         with tab4:
                             df_full = pd.DataFrame(roster)
-                            
-                            # Add search functionality
                             search = st.text_input("🔍 Search players", "")
                             if search:
                                 df_filtered = df_full[df_full['player_name'].str.contains(search, case=False, na=False)]
@@ -373,7 +366,6 @@ elif analysis_type == "Team Rosters":
                             else:
                                 st.dataframe(df_full, use_container_width=True, hide_index=True)
                             
-                            # Download button
                             csv = df_full.to_csv(index=False)
                             st.download_button(
                                 label="📥 Download Roster CSV",
@@ -391,8 +383,6 @@ elif analysis_type == "Team Rosters":
 
 elif analysis_type == "Weekly Predictions":
     st.header(f"📊 Week {week} Predictions")
-    
-    # Quick reference card
     with st.expander("💡 Quick Reference Guide", expanded=False):
         col1, col2, col3 = st.columns(3)
         with col1:
@@ -445,14 +435,11 @@ elif analysis_type == "Weekly Predictions":
                     
                     if dk_lines and dk_lines['spread'] is not None:
                         dk_spread = dk_lines['spread']
-                        
-                        # Calculate edge using betting line format
+
                         edge = prediction['model_betting_line'] - dk_spread
                         
                         if abs(edge) >= 3.0:
-                            # Determine which side to bet based on edge
                             if edge < 0:
-                                # Model thinks HOME is better than Vegas thinks
                                 if dk_spread > 0:
                                     recommended_bet = f"{home} +{dk_spread}"
                                 elif dk_spread < 0:
@@ -460,7 +447,6 @@ elif analysis_type == "Weekly Predictions":
                                 else:
                                     recommended_bet = f"{home} PK"
                             else:
-                                # Model thinks AWAY is better than Vegas thinks
                                 if dk_spread < 0:
                                     recommended_bet = f"{away} +{abs(dk_spread)}"
                                 elif dk_spread > 0:
@@ -487,7 +473,6 @@ elif analysis_type == "Weekly Predictions":
                     sorted_recs = sorted(recommendations, key=lambda x: abs(x['edge']), reverse=True)
                     
                     for i, rec in enumerate(sorted_recs, 1):
-                        # Add emoji indicator for edge strength
                         edge_indicator = "🔥" if abs(rec['edge']) >= 10 else "⚡" if abs(rec['edge']) >= 5 else "⚠️"
                         
                         with st.expander(f"{edge_indicator} #{i} - {rec['game']} - Edge: {rec['edge']:+.1f}"):

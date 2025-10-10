@@ -37,15 +37,12 @@ def fetch_multiple_weeks(season, start_week, end_week):
         else:
             print(f"No games found for Week {week}")
         
-        # Be nice to the API - wait 1 second between requests
         if week < end_week:
             time.sleep(1)
     
     print(f"\n{'=' * 70}")
     print(f"✓ COMPLETE: Added {total_games} total games to database")
     print(f"{'=' * 70}")
-    
-    # Show summary
     print("\nDatabase Summary:")
     all_games = fetcher.db.execute_query("""
         SELECT 
@@ -63,11 +60,8 @@ def fetch_multiple_weeks(season, start_week, end_week):
         print(f"  Week {game['week']}: {game['game_count']} games ({game['completed_games']} completed)")
 
 if __name__ == "__main__":
-    # Fetch multiple seasons
-    # 2022, 2023, 2024, and 2025 (current)
-    
     seasons_to_fetch = [
-        (2022, 1, 18),  # (season, start_week, end_week)
+        (2022, 1, 18),
         (2023, 1, 18),
         (2024, 1, 18),
     ]
@@ -82,8 +76,6 @@ if __name__ == "__main__":
         print(f"{'#' * 70}\n")
         
         fetch_multiple_weeks(season, start_week, end_week)
-        
-        # Wait between seasons
         time.sleep(2)
     
     print("\n\n" + "=" * 70)

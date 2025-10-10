@@ -11,7 +11,7 @@ class ROITracker:
     
     def __init__(self):
         self.db = DatabaseManager()
-        self.standard_bet = 100  # $100 standard bet size
+        self.standard_bet = 100
     
     def log_prediction(self, prediction_data):
         """
@@ -37,8 +37,6 @@ class ROITracker:
              bet_amount, game_date)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """
-        
-        # Adjust bet size based on confidence
         bet_multiplier = {
             'HIGH': 2.0,
             'MEDIUM': 1.0,
@@ -62,8 +60,6 @@ class ROITracker:
     
     def update_prediction_result(self, prediction_id, home_score, away_score):
         """Update prediction with actual game result and calculate profit/loss"""
-        
-        # Get prediction details
         pred = self.db.execute_query("""
             SELECT * FROM prediction_log WHERE prediction_id = %s
         """, (prediction_id,))[0]
@@ -72,28 +68,23 @@ class ROITracker:
         vegas_spread = pred['vegas_spread']
         bet_amount = pred['bet_amount']
         recommendation = pred['recommendation']
-        
-        # Determine if bet won
-        # If recommending home team, they need to beat the spread
+
         if 'HOME' in recommendation:
             bet_result = 'WIN' if actual_spread > vegas_spread else 'LOSS'
             if abs(actual_spread - vegas_spread) < 0.5:
                 bet_result = 'PUSH'
         else:  
-            # Recommending away team
             bet_result = 'WIN' if actual_spread < vegas_spread else 'LOSS'
             if abs(actual_spread - vegas_spread) < 0.5:
                 bet_result = 'PUSH'
         
-        # Calculate profit/loss (standard -110 odds)
         if bet_result == 'WIN':
-            profit_loss = bet_amount * 0.909  # Win $90.90 per $100 bet
+            profit_loss = bet_amount * 0.909
         elif bet_result == 'PUSH':
             profit_loss = 0
         else:
             profit_loss = -bet_amount
         
-        # Update record
         self.db.execute_update("""
             UPDATE prediction_log
             SET actual_home_score = %s,
@@ -104,7 +95,6 @@ class ROITracker:
             WHERE prediction_id = %s
         """, (home_score, away_score, actual_spread, bet_result, profit_loss, prediction_id))
         
-        # Update summary
         self.update_roi_summary(pred['season'], pred['week'])
         
         return bet_result, profit_loss
@@ -132,7 +122,6 @@ class ROITracker:
             roi = (s['total_profit_loss'] / s['total_wagered'] * 100) if s['total_wagered'] > 0 else 0
             win_rate = (s['wins'] / (s['wins'] + s['losses']) * 100) if (s['wins'] + s['losses']) > 0 else 0
             
-            # Upset summary
             self.db.execute_query("""
                 INSERT INTO roi_summary 
                 (season, week, total_bets, winning_bets, losing_bets, push_bets,
@@ -190,7 +179,6 @@ class ROITracker:
             print("\nNo betting history found.")
             return
         
-        # Overall stats
         total_bets = report['total_bets'].sum()
         total_wins = report['winning_bets'].sum()
         total_losses = report['losing_bets'].sum()
@@ -209,15 +197,13 @@ class ROITracker:
         print(f"  Total Profit/Loss: ${total_profit:,.2f}")
         print(f"  ROI: {overall_roi:+.2f}%")
         
-        # Break even calculation
-        break_even_rate = 52.4  # Need 52.4% to break even at -110 odds
+        break_even_rate = 52.4
         print(f"\n  Break-even Win Rate: {break_even_rate}%")
         if overall_win_rate > break_even_rate:
             print(f"  ✓ PROFITABLE! ({overall_win_rate - break_even_rate:.1f}% above break-even)")
         else:
             print(f"  ✗ Need {break_even_rate - overall_win_rate:.1f}% improvement to be profitable")
         
-        # Weekly breakdown
         print(f"\nWeekly Breakdown:")
         print(f"{'Week':<6} {'Bets':<6} {'Record':<12} {'Win%':<8} {'Profit/Loss':<12} {'ROI':<8}")
         print("-" * 70)

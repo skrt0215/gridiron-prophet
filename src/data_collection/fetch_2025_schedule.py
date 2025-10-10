@@ -20,8 +20,6 @@ class ScheduleFetcher:
         self.session.headers.update({
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
         })
-        
-        # ESPN to database abbreviation mapping
         self.espn_to_nfl = {
             'ARI': 'ARI', 'ATL': 'ATL', 'BAL': 'BAL', 'BUF': 'BUF',
             'CAR': 'CAR', 'CHI': 'CHI', 'CIN': 'CIN', 'CLE': 'CLE',
@@ -37,7 +35,7 @@ class ScheduleFetcher:
         """Fetch schedule for a specific week"""
         url = f"http://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard"
         params = {
-            'seasontype': 2,  # Regular season
+            'seasontype': 2,
             'week': week,
             'dates': season
         }
@@ -54,29 +52,24 @@ class ScheduleFetcher:
     def add_game_to_db(self, game_data, season, week):
         """Add a game to the database"""
         try:
-            # Extract competition data
             competitions = game_data.get('competitions', [{}])[0]
             competitors = competitions.get('competitors', [])
             
             if len(competitors) != 2:
                 return False
             
-            # Identify home/away teams
             home_team = next((c for c in competitors if c.get('homeAway') == 'home'), None)
             away_team = next((c for c in competitors if c.get('homeAway') == 'away'), None)
             
             if not home_team or not away_team:
                 return False
             
-            # Get team abbreviations
             espn_home_abbr = home_team['team']['abbreviation']
             espn_away_abbr = away_team['team']['abbreviation']
             
-            # Convert to our format
             home_abbr = self.espn_to_nfl.get(espn_home_abbr, espn_home_abbr)
             away_abbr = self.espn_to_nfl.get(espn_away_abbr, espn_away_abbr)
             
-            # Get team IDs from database
             home_team_obj = self.db.get_team_by_abbreviation(home_abbr)
             away_team_obj = self.db.get_team_by_abbreviation(away_abbr)
             
@@ -87,24 +80,20 @@ class ScheduleFetcher:
             home_team_id = home_team_obj['team_id']
             away_team_id = away_team_obj['team_id']
             
-            # Get game details
             game_date_str = game_data.get('date')
             game_date = datetime.fromisoformat(game_date_str.replace('Z', '+00:00')).date()
             game_time = datetime.fromisoformat(game_date_str.replace('Z', '+00:00')).time()
             
-            # Get stadium info
             venue = competitions.get('venue', {})
             stadium = venue.get('fullName')
             is_dome = venue.get('indoor', False)
             
-            # Get scores (if game completed)
             status = competitions.get('status', {})
             game_status = 'Final' if status.get('type', {}).get('completed', False) else 'Scheduled'
             
             home_score = int(home_team.get('score', 0)) if home_team.get('score') else None
             away_score = int(away_team.get('score', 0)) if away_team.get('score') else None
             
-            # Add game (using add_game_safe to avoid duplicates)
             game_id = self.db.add_game_safe(
                 season=season,
                 week=week,
@@ -151,8 +140,6 @@ class ScheduleFetcher:
             
             print(f"  ✓ Processed {len(games)} games")
             total_added += week_added
-            
-            # Rate limiting
             time.sleep(0.5)
         
         print(f"\n✓ Complete! Processed schedule for weeks {start_week}-{end_week}")
@@ -163,8 +150,6 @@ class ScheduleFetcher:
         print("\n" + "="*70)
         print("VERIFICATION - 2025 SCHEDULE")
         print("="*70)
-        
-        # Games per week
         result = self.db.execute_query("""
             SELECT week, COUNT(*) as games
             FROM games
@@ -183,8 +168,6 @@ class ScheduleFetcher:
         
         print("-" * 20)
         print(f"{'TOTAL':<8} {total:<10}")
-        
-        # Games per team
         print("\n" + "-"*70)
         print("Games Per Team:")
         print("-"*70)
@@ -206,8 +189,6 @@ class ScheduleFetcher:
         for r in team_result:
             status = "⚠️" if r['game_count'] < 6 else "✓"
             print(f"{status} {r['abbreviation']:<6} {r['game_count']:<10}")
-        
-        # Check for Washington specifically
         was_games = [r for r in team_result if r['abbreviation'] == 'WAS']
         if was_games and was_games[0]['game_count'] > 0:
             print(f"\n✓ Washington Commanders now has {was_games[0]['game_count']} games!")
@@ -220,11 +201,7 @@ class ScheduleFetcher:
         print("GRIDIRON PROPHET - 2025 SCHEDULE FETCHER")
         print("="*70)
         print(f"\nStarted at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-        
-        # Fetch schedule
         self.fetch_and_add_schedule(2025, start_week, end_week)
-        
-        # Verify
         self.verify_schedule()
         
         print("\n" + "="*70)
@@ -235,5 +212,4 @@ class ScheduleFetcher:
 
 if __name__ == "__main__":
     fetcher = ScheduleFetcher()
-    # Fetch entire 2025 regular season (Weeks 1-18)
     fetcher.run(start_week=1, end_week=18)

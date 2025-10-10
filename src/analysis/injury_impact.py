@@ -9,42 +9,38 @@ class InjuryImpactAnalyzer:
     
     def __init__(self):
         self.db = DatabaseManager()
-        
-        # Minimum snap percentage to be considered a meaningful contributor
-        # Players below this threshold are likely inactive/emergency/practice squad
+   
         self.MIN_SNAP_THRESHOLD = 0.15  # 15% of snaps
         
-        # Position importance weights (0-1 scale)
         self.position_weights = {
-            'QB': 1.0,      # Quarterback - most critical
-            'WR': 0.6,      # Wide Receiver
-            'RB': 0.6,      # Running Back
-            'TE': 0.5,      # Tight End
-            'OT': 0.7,      # Offensive Tackle - protects QB
-            'OG': 0.5,      # Offensive Guard
-            'G': 0.5,       # Guard (alternate notation)
-            'C': 0.6,       # Center
-            'DE': 0.75,     # Defensive End - elite pass rush critical
-            'DT': 0.65,     # Defensive Tackle - disrupts run game
-            'LB': 0.65,     # Linebacker - defensive QB
-            'CB': 0.75,     # Cornerback - elite CBs shut down top WRs
-            'S': 0.6,       # Safety - key for coverage
-            'DB': 0.65,     # Defensive Back (general)
-            'DL': 0.7,      # Defensive Line (general)
-            'K': 0.2,       # Kicker
-            'P': 0.1,       # Punter
-            'LS': 0.1,      # Long Snapper
-            'FB': 0.3,      # Fullback
+            'QB': 1.0,
+            'WR': 0.6,
+            'RB': 0.6,
+            'TE': 0.5,
+            'OT': 0.7,
+            'OG': 0.5,
+            'G': 0.5,
+            'C': 0.6,
+            'DE': 0.75,
+            'DT': 0.65,
+            'LB': 0.65,
+            'CB': 0.75,
+            'S': 0.6,
+            'DB': 0.65,
+            'DL': 0.7,
+            'K': 0.2,
+            'P': 0.1,
+            'LS': 0.1,
+            'FB': 0.3,
         }
         
-        # Injury status severity multipliers
         self.status_multipliers = {
-            'Out': 1.0,       # Definitely not playing
-            'IR': 1.0,        # Injured Reserve - out for extended period
-            'Doubtful': 0.8,  # Very unlikely to play
-            'Questionable': 0.4,  # 50/50 chance
-            'PUP': 0.9,       # Physically Unable to Perform
-            'NFI': 0.9,       # Non-Football Injury list
+            'Out': 1.0,
+            'IR': 1.0,
+            'Doubtful': 0.8,
+            'Questionable': 0.4,
+            'PUP': 0.9,
+            'NFI': 0.9,
         }
     
     def get_player_importance(self, player_id):
@@ -52,7 +48,6 @@ class InjuryImpactAnalyzer:
         Calculate player importance based on snap counts
         Returns value 0-1 (1 = starter with high snap count)
         """
-        # First try to get snap data
         query = """
             SELECT AVG(snap_percentage) as avg_snaps, MIN(depth_order) as depth
             FROM depth_charts
@@ -65,10 +60,8 @@ class InjuryImpactAnalyzer:
             avg_snaps = float(result[0]['avg_snaps'])
             depth = result[0]['depth']
             
-            # Snap count factor (already in percentage format 0-100)
             snap_factor = min(avg_snaps / 100.0, 1.0)
             
-            # Bonus for being listed higher on depth chart
             depth_bonus = 0.0
             if depth and depth <= 5:
                 depth_bonus = (6 - depth) * 0.1
@@ -76,7 +69,6 @@ class InjuryImpactAnalyzer:
             importance = min(snap_factor + depth_bonus, 1.0)
             return importance
         
-        # FALLBACK: If no snap data, check if they're on depth chart at all
         depth_query = """
             SELECT depth_order as depth, position
             FROM depth_charts
@@ -90,19 +82,17 @@ class InjuryImpactAnalyzer:
             depth = depth_result[0]['depth']
             position = depth_result[0]['position']
             
-            # Starters (depth 1-2) get high importance even without snap data
             if depth == 1:
                 if position == 'QB':
-                    return 1.0  # Starting QB always critical
-                return 0.85  # Other starters
+                    return 1.0
+                return 0.85
             elif depth == 2:
-                return 0.7  # Backup
+                return 0.7
             elif depth <= 5:
                 return 0.5
             else:
                 return 0.3
         
-        # Last resort: assume minimal importance
         return 0.3
     
     def calculate_injury_impact(self, player_id, position, injury_status):
@@ -110,16 +100,12 @@ class InjuryImpactAnalyzer:
         Calculate impact score for a single injured player
         Returns float representing impact (0-10 scale)
         """
-        # Get position weight (default to 0.5 if position not in map)
         position_weight = self.position_weights.get(position, 0.5)
         
-        # Get injury severity
         severity = self.status_multipliers.get(injury_status, 0.5)
         
-        # Get player importance (starter vs backup)
         player_importance = self.get_player_importance(player_id)
         
-        # Calculate total impact (scale to 10)
         impact = position_weight * severity * player_importance * 10
         
         return round(impact, 2)
@@ -129,7 +115,6 @@ class InjuryImpactAnalyzer:
         Calculate total injury impact for a team
         Returns dict with total score and breakdown
         """
-        # Join through player_seasons to get team association
         query = """
             SELECT i.*, p.name as player_name, ps.position, p.player_id
             FROM injuries i
@@ -158,11 +143,8 @@ class InjuryImpactAnalyzer:
         skipped_count = 0
         
         for injury in injuries:
-            # Get player importance FIRST to filter out inactive/emergency players
             player_importance = self.get_player_importance(injury['player_id'])
-            
-            # FILTER: Skip players who don't contribute meaningfully
-            # This filters out emergency QB3s, practice squad players, inactive players
+
             if player_importance < self.MIN_SNAP_THRESHOLD:
                 skipped_count += 1
                 continue
@@ -181,23 +163,21 @@ class InjuryImpactAnalyzer:
                 'status': injury['injury_status'],
                 'body_part': injury.get('body_part', 'Unknown'),
                 'impact_score': impact,
-                'snap_importance': player_importance  # Add for debugging
+                'snap_importance': player_importance
             }
             
             injury_details.append(injury_info)
             
-            # Flag critical injuries (QB or high impact score)
             if injury['position'] == 'QB' or impact >= 4.0:
                 critical_injuries.append(injury_info)
         
-        # Sort injuries by impact
         injury_details.sort(key=lambda x: x['impact_score'], reverse=True)
         
         return {
             'team': team_abbr,
             'total_impact': round(total_impact, 2),
             'injury_count': len(injury_details),
-            'skipped_inactive': skipped_count,  # For debugging
+            'skipped_inactive': skipped_count,
             'critical_injuries': critical_injuries,
             'injuries': injury_details
         }
@@ -216,7 +196,6 @@ class InjuryImpactAnalyzer:
         print(f"INJURY IMPACT ANALYSIS: {away_team} @ {home_team}")
         print("="*70)
         
-        # Home team injuries
         print(f"\n{home_team} Injuries (Total Impact: {home_impact['total_impact']})")
         if home_impact['skipped_inactive'] > 0:
             print(f"  (Skipped {home_impact['skipped_inactive']} inactive/emergency players)")
@@ -226,7 +205,6 @@ class InjuryImpactAnalyzer:
             print(f"  {inj['position']:5} {inj['player']:25} {inj['status']:20} "
                   f"Impact: {inj['impact_score']:.1f} {critical}")
         
-        # Away team injuries
         print(f"\n{away_team} Injuries (Total Impact: {away_impact['total_impact']})")
         if away_impact['skipped_inactive'] > 0:
             print(f"  (Skipped {away_impact['skipped_inactive']} inactive/emergency players)")
@@ -236,7 +214,6 @@ class InjuryImpactAnalyzer:
             print(f"  {inj['position']:5} {inj['player']:25} {inj['status']:20} "
                   f"Impact: {inj['impact_score']:.1f} {critical}")
         
-        # Advantage analysis
         print("\n" + "="*70)
         print("INJURY ADVANTAGE ANALYSIS")
         print("="*70)
@@ -250,8 +227,6 @@ class InjuryImpactAnalyzer:
         
         print(f"\n{advantage}")
         
-        # Suggested spread adjustment
-        # Rule of thumb: 1 point of impact difference ≈ 0.25 points on spread
         spread_adjustment = impact_diff * 0.25
         print(f"\nSuggested spread adjustment: {spread_adjustment:+.1f} points toward {home_team if spread_adjustment > 0 else away_team}")
         
@@ -270,7 +245,6 @@ class InjuryImpactAnalyzer:
         print(f"NFL INJURY IMPACT REPORT - Week {week}, {season}")
         print("="*70)
         
-        # Get all teams
         teams = self.db.get_all_teams()
         
         team_impacts = []
@@ -281,7 +255,6 @@ class InjuryImpactAnalyzer:
             team_impacts.append(impact)
             total_skipped += impact.get('skipped_inactive', 0)
         
-        # Sort by total impact (most impacted first)
         team_impacts.sort(key=lambda x: x['total_impact'], reverse=True)
         
         print(f"\nFiltered out {total_skipped} inactive/emergency players across all teams")
@@ -293,7 +266,6 @@ class InjuryImpactAnalyzer:
             print(f"{idx:2}. {team['team']:5} - Impact: {team['total_impact']:6.1f} - "
                   f"{team['injury_count']} injuries {critical_str}")
         
-        # Highlight most impacted teams
         print("\n" + "="*70)
         print("TOP 5 MOST IMPACTED TEAMS:")
         print("="*70)
@@ -306,9 +278,7 @@ class InjuryImpactAnalyzer:
 if __name__ == "__main__":
     analyzer = InjuryImpactAnalyzer()
     
-    # Generate weekly report
     analyzer.generate_weekly_injury_report()
     
-    # Example matchup analysis
     print("\n\n")
     analyzer.compare_matchup_injuries('DEN', 'NYJ')

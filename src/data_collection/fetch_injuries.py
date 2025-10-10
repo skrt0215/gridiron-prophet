@@ -21,8 +21,7 @@ class InjuryFetcher:
         self.session.headers.update({
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
         })
-        
-        # ESPN to database abbreviation mapping
+
         self.espn_to_nfl = {
             'ARI': 'ARI', 'ATL': 'ATL', 'BAL': 'BAL', 'BUF': 'BUF',
             'CAR': 'CAR', 'CHI': 'CHI', 'CIN': 'CIN', 'CLE': 'CLE',
@@ -34,15 +33,12 @@ class InjuryFetcher:
             'SF': 'SF', 'TB': 'TB', 'TEN': 'TEN', 'WSH': 'WAS'
         }
         
-        self.player_cache = {}  # Cache player lookups
+        self.player_cache = {}
     
     def normalize_player_name(self, name):
         """Normalize player names for matching"""
-        # Remove Jr., Sr., II, III, etc.
         name = name.replace(' Jr.', '').replace(' Sr.', '')
         name = name.replace(' II', '').replace(' III', '').replace(' IV', '')
-        
-        # Remove middle initials
         parts = name.split()
         if len(parts) == 3 and len(parts[1]) <= 2:
             name = f"{parts[0]} {parts[2]}"
@@ -56,30 +52,20 @@ class InjuryFetcher:
         try:
             response = self.session.get(url, timeout=15)
             response.raise_for_status()
-            
             soup = BeautifulSoup(response.text, 'html.parser')
-            
             injuries_by_team = {}
-            
-            # Find all tables on the page
             tables = soup.find_all('table')
             
             print(f"  Found {len(tables)} tables on page\n")
             
-            for idx, table in enumerate(tables):
-                # Look for ANY text before this table that might be the team name
-                # Try multiple strategies
-                
+            for idx, table in enumerate(tables): 
                 team_abbr = None
                 team_text = None
-                
-                # Strategy 1: Look for parent div with team info
                 parent = table.find_parent()
-                for _ in range(5):  # Go up 5 levels
+                for _ in range(5):
                     if parent is None:
                         break
                     
-                    # Check if parent has a title or heading
                     for tag in ['h1', 'h2', 'h3', 'h4', 'h5']:
                         heading = parent.find(tag)
                         if heading:
@@ -90,10 +76,8 @@ class InjuryFetcher:
                     
                     if team_abbr:
                         break
-                    
                     parent = parent.find_parent()
                 
-                # Strategy 2: Look at previous siblings
                 if not team_abbr:
                     elem = table
                     for _ in range(20):
@@ -103,7 +87,7 @@ class InjuryFetcher:
                         
                         if elem.name in ['h1', 'h2', 'h3', 'h4', 'h5', 'div', 'span']:
                             text = elem.get_text(strip=True)
-                            if text and len(text) > 3:  # Avoid empty/short text
+                            if text and len(text) > 3:
                                 team_abbr = self.extract_team_abbr(text)
                                 if team_abbr:
                                     team_text = text
@@ -114,25 +98,18 @@ class InjuryFetcher:
                     continue
                 
                 print(f"  Table {idx+1}: {team_abbr} ({team_text})")
-                
-                # Parse table rows
                 rows = table.find_all('tr')
                 
-                # Skip if no data rows
                 if len(rows) < 2:
                     continue
-                
                 team_injuries = []
                 
-                # Process each row (skip header)
                 for row in rows[1:]:
                     try:
                         cells = row.find_all('td')
                         
                         if len(cells) < 2:
                             continue
-                        
-                        # Get player name (might be in an <a> tag)
                         name_cell = cells[0]
                         player_link = name_cell.find('a')
                         player_name = player_link.get_text(strip=True) if player_link else name_cell.get_text(strip=True)
@@ -140,13 +117,8 @@ class InjuryFetcher:
                         if not player_name:
                             continue
                         
-                        # Get position
                         position = cells[1].get_text(strip=True) if len(cells) > 1 else ''
-                        
-                        # Get status (last column)
                         status = cells[-1].get_text(strip=True)
-                        
-                        # Get injury type (middle columns)
                         injury_type = ''
                         if len(cells) >= 3:
                             injury_type = cells[2].get_text(strip=True)
@@ -180,7 +152,6 @@ class InjuryFetcher:
     
     def extract_team_abbr(self, team_name):
         """Extract team abbreviation from full name"""
-        # Map team names to abbreviations
         name_map = {
             'Arizona Cardinals': 'ARI',
             'Atlanta Falcons': 'ATL',
@@ -229,7 +200,6 @@ class InjuryFetcher:
         
         status = status_str.upper().strip()
         
-        # Map ESPN statuses to our database format
         if 'OUT' in status:
             return 'Out', None
         elif 'DOUBTFUL' in status:
@@ -243,7 +213,7 @@ class InjuryFetcher:
         elif 'NFI' in status:
             return 'NFI', None
         elif 'PROBABLE' in status:
-            return 'Questionable', None  # NFL no longer uses "Probable"
+            return 'Questionable', None
         else:
             return 'Questionable', None
     
@@ -251,12 +221,10 @@ class InjuryFetcher:
         """Find player_id in database"""
         normalized_name = self.normalize_player_name(player_name)
         
-        # Check cache
         cache_key = f"{normalized_name}_{team_id}"
         if cache_key in self.player_cache:
             return self.player_cache[cache_key]
         
-        # Query database - look in player_seasons for 2025
         result = self.db.execute_query("""
             SELECT p.player_id
             FROM players p
@@ -268,8 +236,6 @@ class InjuryFetcher:
         """, (normalized_name, team_id))
         
         player_id = result[0]['player_id'] if result else None
-        
-        # Cache result
         self.player_cache[cache_key] = player_id
         
         return player_id
@@ -277,28 +243,19 @@ class InjuryFetcher:
     def add_injury_to_db_scraped(self, injury_data, team_id, season=2025):
         """Add a scraped injury to the database"""
         try:
-            # Get player name
             player_name = injury_data.get('name')
             if not player_name:
                 return False
             
-            # Find player in database
             player_id = self.find_player_id(player_name, team_id)
             if not player_id:
-                # Try without normalization (some names might not match)
                 return False
             
-            # Parse injury details
             injury_status_raw = injury_data.get('status', '')
             injury_status, practice_status = self.parse_injury_status(injury_status_raw)
-            
-            # Get injury type (body part)
             body_part = injury_data.get('type', 'Unknown')
-            
-            # Get date reported (use today)
             date_reported = date.today()
             
-            # Add to database
             self.db.add_injury(
                 player_id=player_id,
                 season=season,
@@ -327,7 +284,6 @@ class InjuryFetcher:
         print("="*70)
         print(f"\nScraping injury data from ESPN...\n")
         
-        # Get all injuries from ESPN's injury page
         injuries_by_team = self.get_all_injuries_from_espn()
         
         if not injuries_by_team:
@@ -339,7 +295,6 @@ class InjuryFetcher:
         total_injuries = 0
         
         for team_abbr, injuries in injuries_by_team.items():
-            # Get team from database
             team = self.db.get_team_by_abbreviation(team_abbr)
             if not team:
                 print(f"  ⚠️  Team not found in DB: {team_abbr}")
@@ -360,7 +315,6 @@ class InjuryFetcher:
             else:
                 print(f"({len(injuries)} found, 0 matched)")
             
-            # Rate limiting
             time.sleep(0.1)
         
         print(f"\n{'='*70}")
@@ -375,7 +329,6 @@ class InjuryFetcher:
         print("INJURY REPORT VERIFICATION")
         print("="*70)
         
-        # Count by status
         result = self.db.execute_query("""
             SELECT 
                 injury_status,
@@ -405,7 +358,6 @@ class InjuryFetcher:
         print("-" * 35)
         print(f"{'TOTAL':<20} {total:<10}")
         
-        # Show injuries by team
         print("\n" + "-"*70)
         print("Injuries Per Team:")
         print("-"*70)
@@ -431,7 +383,6 @@ class InjuryFetcher:
             print(f"{r['abbreviation']:<8} {r['injury_count']:<10} "
                   f"{r['out_count']:<8} {r['ir_count']:<8}")
         
-        # Show sample injuries
         print("\n" + "-"*70)
         print("Sample Injury Report:")
         print("-"*70)
@@ -474,14 +425,11 @@ class InjuryFetcher:
         print("="*70)
         print(f"\nStarted at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         
-        # Clear existing injuries if requested
         if clear_existing:
             self.clear_current_injuries(2025)
         
-        # Fetch all injuries
         total = self.fetch_all_injuries(2025)
         
-        # Verify
         if total > 0:
             self.verify_injuries(2025)
         else:

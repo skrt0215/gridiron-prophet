@@ -23,7 +23,6 @@ class ESPN2025Fetcher:
         self.player_name_to_id = {}
         self.game_cache = {}
         
-        # ESPN team abbreviation mapping (ESPN uses different codes)
         self.espn_to_nfl = {
             'ARI': 'ARI', 'ATL': 'ATL', 'BAL': 'BAL', 'BUF': 'BUF',
             'CAR': 'CAR', 'CHI': 'CHI', 'CIN': 'CIN', 'CLE': 'CLE',
@@ -32,7 +31,7 @@ class ESPN2025Fetcher:
             'LAR': 'LA', 'LAC': 'LAC', 'LV': 'LV', 'MIA': 'MIA',
             'MIN': 'MIN', 'NE': 'NE', 'NO': 'NO', 'NYG': 'NYG',
             'NYJ': 'NYJ', 'PHI': 'PHI', 'PIT': 'PIT', 'SEA': 'SEA',
-            'SF': 'SF', 'TB': 'TB', 'TEN': 'TEN', 'WSH': 'WAS'  # ESPN uses WSH, DB uses WAS
+            'SF': 'SF', 'TB': 'TB', 'TEN': 'TEN', 'WSH': 'WAS'
         }
     
     def load_active_players(self):
@@ -52,7 +51,7 @@ class ESPN2025Fetcher:
         """Get games for a specific week from ESPN"""
         url = f"http://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard"
         params = {
-            'seasontype': 2,  # Regular season
+            'seasontype': 2,
             'week': week,
             'dates': season
         }
@@ -80,7 +79,6 @@ class ESPN2025Fetcher:
             response.raise_for_status()
             data = response.json()
             
-            # Extract player stats from boxscore
             boxscore = data.get('boxscore', {})
             players = boxscore.get('players', [])
             
@@ -92,11 +90,8 @@ class ESPN2025Fetcher:
     
     def normalize_player_name(self, name):
         """Normalize player names for matching"""
-        # Remove Jr., Sr., II, III, etc.
         name = name.replace(' Jr.', '').replace(' Sr.', '')
         name = name.replace(' II', '').replace(' III', '').replace(' IV', '')
-        
-        # Remove middle initials
         parts = name.split()
         if len(parts) == 3 and len(parts[1]) <= 2:
             name = f"{parts[0]} {parts[2]}"
@@ -113,19 +108,15 @@ class ESPN2025Fetcher:
             'receiving_touchdowns': 0, 'fumbles': 0, 'fumbles_lost': 0
         }
         
-        # ESPN stat format: array of values corresponding to stat labels
         stat_labels = stat_data.get('labels', [])
         stat_values = stat_data.get('stats', [])
         
         if not stat_labels or not stat_values:
             return stats
         
-        # Create label -> value mapping
         stat_dict = dict(zip(stat_labels, stat_values))
         
-        # Parse based on position category (passing, rushing, receiving)
         if position_category == 'passing':
-            # Format: "C/ATT YDS AVG TD INT QBR"
             if 'C/ATT' in stat_dict:
                 comp_att = stat_dict['C/ATT'].split('/')
                 if len(comp_att) == 2:
@@ -137,13 +128,11 @@ class ESPN2025Fetcher:
             stats['sacks_taken'] = int(stat_dict.get('SACKS', 0) if 'SACKS' in stat_dict else 0)
         
         elif position_category == 'rushing':
-            # Format: "CAR YDS AVG TD LONG"
             stats['rush_attempts'] = int(stat_dict.get('CAR', 0))
             stats['rush_yards'] = int(stat_dict.get('YDS', 0))
             stats['rush_touchdowns'] = int(stat_dict.get('TD', 0))
         
         elif position_category == 'receiving':
-            # Format: "REC YDS AVG TD LONG TGTS"
             stats['receptions'] = int(stat_dict.get('REC', 0))
             stats['receiving_yards'] = int(stat_dict.get('YDS', 0))
             stats['receiving_touchdowns'] = int(stat_dict.get('TD', 0))
@@ -175,7 +164,6 @@ class ESPN2025Fetcher:
         """Process all games for a specific week"""
         print(f"\nProcessing Week {week}...")
         
-        # Get schedule for this week
         games = self.get_week_schedule(season, week)
         
         if not games:
@@ -186,14 +174,12 @@ class ESPN2025Fetcher:
         
         for game_data in games:
             try:
-                # Get team info
                 competitions = game_data.get('competitions', [{}])[0]
                 competitors = competitions.get('competitors', [])
                 
                 if len(competitors) != 2:
                     continue
                 
-                # Identify home/away teams
                 home_team = next((c for c in competitors if c.get('homeAway') == 'home'), None)
                 away_team = next((c for c in competitors if c.get('homeAway') == 'away'), None)
                 
@@ -203,22 +189,18 @@ class ESPN2025Fetcher:
                 espn_home_abbr = home_team['team']['abbreviation']
                 espn_away_abbr = away_team['team']['abbreviation']
                 
-                # Convert ESPN abbreviations to our format
                 home_abbr = self.espn_to_nfl.get(espn_home_abbr, espn_home_abbr)
                 away_abbr = self.espn_to_nfl.get(espn_away_abbr, espn_away_abbr)
                 
-                # Find game in our database
                 game_id, home_team_id, away_team_id = self.find_game_id(home_abbr, away_abbr, season, week)
                 
                 if not game_id:
                     print(f"  ⚠️  Game not found in DB: {home_abbr} vs {away_abbr}")
                     continue
                 
-                # Get player stats for this game
                 espn_game_id = game_data.get('id')
                 player_stats = self.get_player_stats_for_game(espn_game_id)
                 
-                # Process each team's stats
                 for team_stats in player_stats:
                     team_abbr = team_stats.get('team', {}).get('abbreviation', '')
                     team_abbr = self.espn_to_nfl.get(team_abbr, team_abbr)
@@ -226,32 +208,20 @@ class ESPN2025Fetcher:
                     team_obj = self.db.get_team_by_abbreviation(team_abbr)
                     if not team_obj:
                         continue
-                    
                     team_id = team_obj['team_id']
-                    
-                    # Process each position category (passing, rushing, receiving)
                     for category in team_stats.get('statistics', []):
                         category_name = category.get('name', '').lower()
                         athletes = category.get('athletes', [])
-                        
                         for athlete_data in athletes:
                             athlete = athlete_data.get('athlete', {})
                             player_name = athlete.get('displayName', '')
-                            
                             if not player_name:
                                 continue
-                            
-                            # Match player to database
                             normalized_name = self.normalize_player_name(player_name)
                             player_id = self.player_name_to_id.get(normalized_name)
-                            
                             if not player_id:
-                                continue  # Skip players not in our 2025 roster
-                            
-                            # Parse stats
+                                continue 
                             stats = self.parse_player_stats(athlete_data, category_name)
-                            
-                            # Add to database
                             try:
                                 self.db.add_player_game_stat(
                                     player_id=player_id,
@@ -264,11 +234,8 @@ class ESPN2025Fetcher:
                                 total_stats_added += 1
                             except Exception as e:
                                 if "Duplicate entry" not in str(e):
-                                    pass  # Silently skip errors
-                
-                # Rate limiting
-                time.sleep(0.5)
-                
+                                    pass
+                                time.sleep(0.5)
             except Exception as e:
                 print(f"  ✗ Error processing game: {e}")
                 continue
@@ -288,10 +255,7 @@ class ESPN2025Fetcher:
         for week in range(start_week, end_week + 1):
             added = self.process_week(2025, week)
             total_added += added
-            
-            # Rate limiting between weeks
             time.sleep(1)
-        
         return total_added
     
     def verify_data(self):
@@ -325,20 +289,12 @@ class ESPN2025Fetcher:
         print("GRIDIRON PROPHET - ESPN 2025 STATS FETCHER")
         print("="*70)
         print(f"\nStarted at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-        
-        # Auto-detect current week if not specified
         if end_week is None:
-            # For now, default to week 6 (adjust as season progresses)
             end_week = 6
             print(f"\nAuto-fetching weeks {start_week}-{end_week}")
         
-        # Load players
         self.load_active_players()
-        
-        # Fetch stats
         total = self.fetch_2025_season(start_week, end_week)
-        
-        # Verify
         self.verify_data()
         
         print("\n" + "="*70)
@@ -349,5 +305,4 @@ class ESPN2025Fetcher:
 if __name__ == "__main__":
     fetcher = ESPN2025Fetcher()
     
-    # Fetch weeks 1-6 (adjust based on current week)
     fetcher.run(start_week=1, end_week=6)

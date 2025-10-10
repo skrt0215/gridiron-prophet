@@ -1,7 +1,5 @@
 -- Gridiron Prophet Database Schema V2.1 - CORRECTED
--- Multi-Season Architecture with Proper Fields
 
--- Teams Table
 CREATE TABLE IF NOT EXISTS teams (
     team_id INT PRIMARY KEY AUTO_INCREMENT,
     name VARCHAR(100) NOT NULL,
@@ -15,7 +13,6 @@ CREATE TABLE IF NOT EXISTS teams (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
 
--- Players Table (Master list - season-agnostic, NO team info here)
 CREATE TABLE IF NOT EXISTS players (
     player_id INT PRIMARY KEY AUTO_INCREMENT,
     name VARCHAR(100) NOT NULL,
@@ -29,7 +26,6 @@ CREATE TABLE IF NOT EXISTS players (
     UNIQUE KEY unique_player_name_position (name, position)
 );
 
--- Player Seasons Table (Tracks player-team-season relationship)
 CREATE TABLE IF NOT EXISTS player_seasons (
     player_season_id INT PRIMARY KEY AUTO_INCREMENT,
     player_id INT NOT NULL,
@@ -42,7 +38,7 @@ CREATE TABLE IF NOT EXISTS player_seasons (
     games_played INT DEFAULT 0,
     games_started INT DEFAULT 0,
     status VARCHAR(20) DEFAULT 'Active',
-    roster_status VARCHAR(30) DEFAULT 'Active',  -- NEW: Active, Practice Squad, IR, PUP, etc.
+    roster_status VARCHAR(30) DEFAULT 'Active',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (player_id) REFERENCES players(player_id) ON DELETE CASCADE,
@@ -53,7 +49,6 @@ CREATE TABLE IF NOT EXISTS player_seasons (
     INDEX idx_roster_status (roster_status)
 );
 
--- Games Table
 CREATE TABLE IF NOT EXISTS games (
     game_id INT PRIMARY KEY AUTO_INCREMENT,
     season INT NOT NULL,
@@ -78,7 +73,6 @@ CREATE TABLE IF NOT EXISTS games (
     INDEX idx_season_week (season, week)
 );
 
--- Injuries Table (Now with season tracking)
 CREATE TABLE IF NOT EXISTS injuries (
     injury_id INT PRIMARY KEY AUTO_INCREMENT,
     player_id INT NOT NULL,
@@ -101,7 +95,6 @@ CREATE TABLE IF NOT EXISTS injuries (
     INDEX idx_date_reported (date_reported)
 );
 
--- Depth Charts Table (Snap count tracking)
 CREATE TABLE IF NOT EXISTS depth_charts (
     depth_chart_id INT PRIMARY KEY AUTO_INCREMENT,
     team_id INT NOT NULL,
@@ -123,7 +116,6 @@ CREATE TABLE IF NOT EXISTS depth_charts (
     INDEX idx_player_season (player_id, season)
 );
 
--- Betting Lines Table
 CREATE TABLE IF NOT EXISTS betting_lines (
     betting_line_id INT PRIMARY KEY AUTO_INCREMENT,
     game_id INT NOT NULL,
@@ -142,7 +134,6 @@ CREATE TABLE IF NOT EXISTS betting_lines (
     INDEX idx_game_timestamp (game_id, timestamp)
 );
 
--- Player Game Stats Table (RENAMED from player_stats, with all fields from fetch_player_stats.py)
 CREATE TABLE IF NOT EXISTS player_game_stats (
     stat_id INT PRIMARY KEY AUTO_INCREMENT,
     player_id INT NOT NULL,
@@ -151,7 +142,6 @@ CREATE TABLE IF NOT EXISTS player_game_stats (
     season INT NOT NULL,
     week INT NOT NULL,
     
-    -- Passing stats
     pass_attempts INT DEFAULT 0,
     pass_completions INT DEFAULT 0,
     pass_yards INT DEFAULT 0,
@@ -159,18 +149,15 @@ CREATE TABLE IF NOT EXISTS player_game_stats (
     interceptions INT DEFAULT 0,
     sacks_taken INT DEFAULT 0,
     
-    -- Rushing stats
     rush_attempts INT DEFAULT 0,
     rush_yards INT DEFAULT 0,
     rush_touchdowns INT DEFAULT 0,
     
-    -- Receiving stats
     targets INT DEFAULT 0,
     receptions INT DEFAULT 0,
     receiving_yards INT DEFAULT 0,
     receiving_touchdowns INT DEFAULT 0,
     
-    -- Defensive stats
     tackles INT DEFAULT 0,
     tackles_for_loss INT DEFAULT 0,
     sacks DECIMAL(3,1) DEFAULT 0.0,
@@ -179,7 +166,6 @@ CREATE TABLE IF NOT EXISTS player_game_stats (
     interceptions_defense INT DEFAULT 0,
     passes_defended INT DEFAULT 0,
     
-    -- Misc stats
     fumbles INT DEFAULT 0,
     fumbles_lost INT DEFAULT 0,
     

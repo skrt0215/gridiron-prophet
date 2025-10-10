@@ -21,7 +21,6 @@ class OddsComparator:
         self.api_key = os.getenv('ODDS_API_KEY')
         self.base_url = "https://api.the-odds-api.com/v4/sports"
         
-        # Load trained model
         with open('src/models/spread_model.pkl', 'rb') as f:
             model_data = pickle.load(f)
             self.model = model_data['model']
@@ -72,7 +71,6 @@ class OddsComparator:
             away_team = event['away_team']
             commence_time = event['commence_time']
             
-            # Get spread from bookmakers
             spreads = []
             totals = []
             
@@ -106,7 +104,6 @@ class OddsComparator:
         predictions = []
         
         for game in games_list:
-            # Map team names to database IDs
             home_team = self.db.execute_query(
                 "SELECT team_id, name FROM teams WHERE name LIKE %s LIMIT 1",
                 (f"%{game['home_team'].split()[-1]}%",)
@@ -123,14 +120,12 @@ class OddsComparator:
             home_id = home_team[0]['team_id']
             away_id = away_team[0]['team_id']
             
-            # Build features for this game
             home_recent = self.predictor.get_team_recent_performance(home_id, season, week, 5)
             away_recent = self.predictor.get_team_recent_performance(away_id, season, week, 5)
             
             home_offense = self.predictor.get_team_offensive_stats(home_id, season, week)
             away_offense = self.predictor.get_team_offensive_stats(away_id, season, week)
             
-            # Try to get defensive rankings, fall back to defaults if not available
             try:
                 def_rankings = self.defensive_ranker.get_all_defensive_rankings(season, week - 1)
                 home_def = def_rankings[def_rankings['team_id'] == home_id]
@@ -166,31 +161,20 @@ class OddsComparator:
                 'defense_advantage': (away_recent['avg_points_scored'] or 0) - (home_recent['avg_points_allowed'] or 0),
             }
             
-            # Ensure all features exist
             features_df = pd.DataFrame([feature_dict])[self.feature_columns].fillna(0)
             
-            # Predict spread (returns point margin: positive = home wins by X)
             predicted_margin = self.model.predict(features_df)[0]
             
-            # Convert to betting line convention (negative = favorite)
-            # If home team predicted to win by 3, betting line is HOME -3
             model_betting_line = -predicted_margin
             
-            # Calculate edge: 
-            # Negative edge = model thinks home team is BETTER than Vegas thinks
-            # Positive edge = model thinks away team is BETTER than Vegas thinks
             edge = model_betting_line - game['vegas_spread']
             
-            # Determine recommended bet
             home_name = home_team[0]['name']
             away_name = away_team[0]['name']
             vegas_line = game['vegas_spread']
             
-            if abs(edge) >= 3.0:  # Only recommend if significant edge
+            if abs(edge) >= 3.0:
                 if edge < 0:
-                    # Model thinks home team is BETTER than Vegas thinks
-                    # Example: Model has HOME -3, Vegas has HOME +2 → edge = -5
-                    # Bet HOME team
                     if vegas_line > 0:
                         recommended_bet = f"{home_name} +{vegas_line}"
                     elif vegas_line < 0:
@@ -199,9 +183,6 @@ class OddsComparator:
                         recommended_bet = f"{home_name} PK"
                     recommended_side = "home"
                 else:
-                    # Model thinks away team is BETTER than Vegas thinks
-                    # Example: Model has HOME -10, Vegas has HOME -3 → edge = -7
-                    # Bet AWAY team
                     if vegas_line < 0:
                         recommended_bet = f"{away_name} +{abs(vegas_line)}"
                     elif vegas_line > 0:
@@ -219,7 +200,7 @@ class OddsComparator:
                 'home_team_id': home_id,
                 'away_team_id': away_id,
                 'model_betting_line': model_betting_line,
-                'predicted_margin': predicted_margin,  # Keep for reference
+                'predicted_margin': predicted_margin,
                 'vegas_spread': vegas_line,
                 'edge': edge,
                 'vegas_total': game['vegas_total'],
@@ -228,7 +209,6 @@ class OddsComparator:
                 'recommended_side': recommended_side
             }
             
-            # Add confidence score
             pred_dict['confidence'] = self.calculate_confidence(pred_dict)
             
             predictions.append(pred_dict)
@@ -242,7 +222,6 @@ class OddsComparator:
         """
         edge = abs(prediction['edge'])
         
-        # Confidence factors:
         if edge >= 7:
             edge_score = 3
         elif edge >= 5:
@@ -274,7 +253,6 @@ class OddsComparator:
         else:
             print(f"\n✓ Found {len(opportunities)} games with {min_edge}+ point edge:\n")
         
-        # Show all predictions
         for pred in sorted(predictions, key=lambda x: abs(x['edge']), reverse=True):
             edge = pred['edge']
             edge_str = f"+{edge:.1f}" if edge > 0 else f"{edge:.1f}"
@@ -304,31 +282,26 @@ def main():
     print("GRIDIRON PROPHET - LIVE ODDS COMPARISON")
     print("=" * 80)
     
-    # Fetch current odds
     odds_data = comparator.fetch_current_odds()
     
     if not odds_data:
         print("\nCould not fetch odds. Check your API key.")
         return
     
-    # Parse odds
     games = comparator.parse_odds_data(odds_data)
     
     if not games:
         print("\nNo games with available odds found.")
         return
     
-    # Generate predictions (adjust season/week as needed)
     season = 2025
     week = 6
     
     print(f"\nGenerating predictions for {len(games)} games...")
     predictions = comparator.generate_model_predictions(games, season=season, week=week)
     
-    # Find opportunities
     opportunities = comparator.find_betting_opportunities(predictions, min_edge=3.0)
     
-    # Log predictions to database
     print("\nLogging predictions to database...")
     for pred in predictions:
         try:

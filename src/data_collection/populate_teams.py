@@ -75,7 +75,6 @@ def populate_nfl_teams():
     
     print(f"\n{added_count} teams added successfully!")
     
-    # Verify
     all_teams = db.get_all_teams()
     print(f"Total teams in database: {len(all_teams)}")
 

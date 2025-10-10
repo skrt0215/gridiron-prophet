@@ -3,10 +3,7 @@ from pymysql.cursors import DictCursor
 from contextlib import contextmanager
 import os
 from dotenv import load_dotenv
-
-# Load environment variables from config/.env file
 load_dotenv('config/.env')
-
 class DatabaseManager:
     """Manages database connections and operations for Gridiron Prophet"""
     
@@ -58,10 +55,6 @@ class DatabaseManager:
                 cursor.execute(query, params or ())
                 return cursor.rowcount
     
-    # ========================
-    # TEAM OPERATIONS
-    # ========================
-    
     def add_team(self, name, abbreviation, city=None, conference=None, 
                  division=None, stadium=None, head_coach=None):
         """Add a new team to the database"""
@@ -81,10 +74,6 @@ class DatabaseManager:
         """Get all teams"""
         query = "SELECT * FROM teams ORDER BY name"
         return self.execute_query(query)
-    
-    # ========================
-    # PLAYER OPERATIONS (Season-agnostic master table)
-    # ========================
     
     def add_player(self, name, position=None, height=None, weight=None, 
                    college=None):
@@ -113,10 +102,6 @@ class DatabaseManager:
         if player:
             return player['player_id']
         return self.add_player(name, position, height, weight, college)
-    
-    # ========================
-    # PLAYER SEASONS OPERATIONS (Team assignments by season)
-    # ========================
     
     def add_player_season(self, player_id, season, team_id, position=None, 
                          jersey_number=None, age=None, years_in_league=None,
@@ -207,10 +192,6 @@ class DatabaseManager:
         """
         return self.execute_query(query, (player_id,))
     
-    # ========================
-    # GAME OPERATIONS
-    # ========================
-    
     def game_exists(self, season, week, home_team_id, away_team_id):
         """Check if a game already exists"""
         query = """
@@ -292,13 +273,8 @@ class DatabaseManager:
         """
         return self.execute_query(query, (season,))
     
-    # ========================
-    # PLAYER GAME STATS OPERATIONS
-    # ========================
-    
     def add_player_game_stat(self, player_id, game_id, team_id, season, week, **stats):
         """Add player game statistics (takes all stat fields as kwargs)"""
-        # Build column and value lists dynamically
         base_cols = ['player_id', 'game_id', 'team_id', 'season', 'week']
         base_vals = [player_id, game_id, team_id, season, week]
         
@@ -352,10 +328,6 @@ class DatabaseManager:
         """
         return self.execute_query(query, (player_id,))
     
-    # ========================
-    # INJURY OPERATIONS
-    # ========================
-    
     def add_injury(self, player_id, season, injury_status, date_reported, 
                    week=None, game_id=None, body_part=None, expected_return_date=None, 
                    practice_status=None, notes=None):
@@ -399,10 +371,6 @@ class DatabaseManager:
         """
         return self.execute_query(query, (season,))
     
-    # ========================
-    # BETTING LINES OPERATIONS
-    # ========================
-    
     def add_betting_line(self, game_id, source=None, spread=None, spread_juice=None,
                         moneyline_home=None, moneyline_away=None, over_under=None,
                         over_juice=None, under_juice=None, is_opening_line=False,
@@ -429,10 +397,6 @@ class DatabaseManager:
         """
         return self.execute_query(query, (game_id,))
     
-    # ========================
-    # UTILITY OPERATIONS
-    # ========================
-    
     def clear_duplicates(self):
         """Remove duplicate games, keeping the most recent entry"""
         query = """
@@ -448,7 +412,6 @@ class DatabaseManager:
         print(f"Removed {rows_deleted} duplicate games")
         return rows_deleted
 
-# Example usage
 if __name__ == "__main__":
     db = DatabaseManager()
     
@@ -456,7 +419,6 @@ if __name__ == "__main__":
         teams = db.get_all_teams()
         print(f"✓ Database connected! Found {len(teams)} teams.")
         
-        # Test player_seasons query
         active_2025 = db.get_active_players_for_season(2025)
         print(f"✓ Found {len(active_2025)} active players for 2025 season")
         

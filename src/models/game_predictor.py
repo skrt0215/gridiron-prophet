@@ -29,19 +29,12 @@ class NFLGamePredictor:
             max_week_2025: Only include 2025 games up to this week
         """
         print("Fetching game data from database...")
-        
-        # Build the WHERE clause
         where_clauses = [f"g.season IN ({','.join(['%s'] * len(seasons))})"]
         params = list(seasons)
-        
-        # Add week limit for 2025 if specified
         if max_week_2025 and 2025 in seasons:
             where_clauses.append("(g.season < 2025 OR g.week <= %s)")
             params.append(max_week_2025)
-        
-        # Only completed games
         where_clauses.append("g.game_status = 'Final'")
-        
         query = f"""
             SELECT 
                 g.game_id,
@@ -72,21 +65,13 @@ class NFLGamePredictor:
         Calculate cumulative team statistics for each game
         """
         print("Calculating team statistics...")
-        
         features_list = []
-        
-        # Group by season and process sequentially
         for season in games_df['season'].unique():
             season_games = games_df[games_df['season'] == season].copy()
-            
-            # Initialize team stats for this season
             team_stats = {}
-            
             for idx, game in season_games.iterrows():
                 home_team = game['home_team']
                 away_team = game['away_team']
-                
-                # Initialize teams if not seen yet this season
                 if home_team not in team_stats:
                     team_stats[home_team] = {
                         'wins': 0, 'losses': 0,
@@ -97,12 +82,9 @@ class NFLGamePredictor:
                         'wins': 0, 'losses': 0,
                         'points_scored': [], 'points_allowed': []
                     }
-                
-                # Get current stats (before this game)
+
                 home_stats = team_stats[home_team]
                 away_stats = team_stats[away_team]
-                
-                # Calculate features based on stats BEFORE this game
                 home_games = home_stats['wins'] + home_stats['losses']
                 away_games = away_stats['wins'] + away_stats['losses']
                 
@@ -126,20 +108,14 @@ class NFLGamePredictor:
                 }
                 
                 features_list.append(features)
-                
-                # Update stats AFTER recording features (for next game)
                 home_scored = game['home_score']
                 away_scored = game['away_score']
-                
-                # Update home team stats
                 team_stats[home_team]['points_scored'].append(home_scored)
                 team_stats[home_team]['points_allowed'].append(away_scored)
                 if game['home_win']:
                     team_stats[home_team]['wins'] += 1
                 else:
                     team_stats[home_team]['losses'] += 1
-                
-                # Update away team stats
                 team_stats[away_team]['points_scored'].append(away_scored)
                 team_stats[away_team]['points_allowed'].append(home_scored)
                 if not game['home_win']:
@@ -163,17 +139,10 @@ class NFLGamePredictor:
         
         if max_week_2025:
             print(f"Including 2025 games through Week {max_week_2025}")
-        
-        # Fetch and prepare data (with optional week limit)
         games_df = self.fetch_training_data(seasons, max_week_2025)
         features_df = self.calculate_team_stats(games_df)
-        
-        # Remove early season games where teams have no history
         features_df = features_df[features_df['week'] > 1].copy()
-        
         print(f"\nUsing {len(features_df)} games for training")
-        
-        # Define feature columns
         self.feature_columns = [
             'home_wins', 'home_losses', 'home_win_pct',
             'home_avg_points_scored', 'home_avg_points_allowed',
@@ -183,16 +152,12 @@ class NFLGamePredictor:
         
         X = features_df[self.feature_columns]
         y = features_df['home_win']
-        
-        # Split data: train on earlier games, test on later games
         X_train, X_test, y_train, y_test = train_test_split(
             X, y, test_size=0.2, random_state=42, shuffle=False
         )
         
         print(f"Training set: {len(X_train)} games")
         print(f"Test set: {len(X_test)} games")
-        
-        # Train Random Forest model
         print("\nTraining Random Forest model...")
         self.model = RandomForestClassifier(
             n_estimators=100,
@@ -202,69 +167,52 @@ class NFLGamePredictor:
         )
         
         self.model.fit(X_train, y_train)
-        
-        # Make predictions
         y_pred = self.model.predict(X_test)
-        
-        # Evaluate
         accuracy = accuracy_score(y_test, y_pred)
-        
         print("\n" + "=" * 70)
         print("MODEL PERFORMANCE")
         print("=" * 70)
         print(f"\nAccuracy: {accuracy:.2%}")
         print("\nClassification Report:")
         print(classification_report(y_test, y_pred, target_names=['Away Win', 'Home Win']))
-        
         print("\nConfusion Matrix:")
         cm = confusion_matrix(y_test, y_pred)
         print(f"  Predicted Away Win | Predicted Home Win")
         print(f"Actual Away Win:  {cm[0][0]:4d}           {cm[0][1]:4d}")
         print(f"Actual Home Win:  {cm[1][0]:4d}           {cm[1][1]:4d}")
-        
-        # Feature importance
         print("\nFeature Importance:")
         importances = pd.DataFrame({
             'feature': self.feature_columns,
             'importance': self.model.feature_importances_
         }).sort_values('importance', ascending=False)
-        
         for _, row in importances.iterrows():
             print(f"  {row['feature']:30s}: {row['importance']:.4f}")
-        
-        # Home field advantage analysis
         home_wins = y_test.sum()
         total_games = len(y_test)
         print(f"\nHome Field Advantage in Test Set:")
         print(f"  Home team wins: {home_wins}/{total_games} ({home_wins/total_games:.1%})")
-        
         return accuracy
     
     def save_model(self, filepath='src/models/spread_model.pkl'):
         """Save the trained model to disk"""
         if self.model is None:
             raise ValueError("No model to save. Train the model first.")
-        
         model_data = {
             'model': self.model,
             'feature_columns': self.feature_columns
         }
         
         os.makedirs(os.path.dirname(filepath), exist_ok=True)
-        
         with open(filepath, 'wb') as f:
             pickle.dump(model_data, f)
-        
         print(f"\n✓ Model saved to {filepath}")
     
     def load_model(self, filepath='src/models/spread_model.pkl'):
         """Load a trained model from disk"""
         with open(filepath, 'rb') as f:
             model_data = pickle.load(f)
-        
         self.model = model_data['model']
         self.feature_columns = model_data['feature_columns']
-        
         print(f"✓ Model loaded from {filepath}")
     
     def predict_game(self, home_team_stats, away_team_stats):
@@ -280,8 +228,6 @@ class NFLGamePredictor:
         """
         if self.model is None:
             raise ValueError("Model not trained. Call train_model() first.")
-        
-        # Prepare features
         features = pd.DataFrame([{
             'home_wins': home_team_stats.get('wins', 0),
             'home_losses': home_team_stats.get('losses', 0),
@@ -294,8 +240,7 @@ class NFLGamePredictor:
             'away_avg_points_scored': away_team_stats.get('avg_points_scored', 0),
             'away_avg_points_allowed': away_team_stats.get('avg_points_allowed', 0)
         }])
-        
-        # Predict
+
         prediction = self.model.predict(features)[0]
         probability = self.model.predict_proba(features)[0]
         
@@ -306,15 +251,9 @@ class NFLGamePredictor:
         }
 
 if __name__ == "__main__":
-    # Train model on historical data
     predictor = NFLGamePredictor()
-    
-    # Initial training (2022-2024 only)
     accuracy = predictor.train_model([2022, 2023, 2024])
-    
-    # Save the model
     predictor.save_model()
-    
     print("\n" + "=" * 70)
     print("Training complete! Model ready for predictions.")
     print("=" * 70)
