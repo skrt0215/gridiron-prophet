@@ -45,9 +45,9 @@ class InjuryImpactCalculator:
             JOIN players p ON i.player_id = p.player_id
             JOIN player_seasons ps ON i.player_id = ps.player_id AND i.season = ps.season
             JOIN teams t ON ps.team_id = t.team_id
-            WHERE t.abbreviation = ?
-            AND i.season = ?
-            AND i.week = ?
+            WHERE t.abbreviation = %s
+            AND i.season = %s
+            AND i.week = %s
         """, (team, season, week))
         
         return [
@@ -202,7 +202,7 @@ def main():
             JOIN player_seasons ps ON i.player_id = ps.player_id AND i.season = ps.season
             JOIN teams t ON ps.team_id = t.team_id
             WHERE i.season = 2025
-            AND i.week = ?
+            AND i.week = %s
             ORDER BY t.abbreviation
         """, (current_week,))
         
