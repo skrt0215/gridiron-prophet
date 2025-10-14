@@ -70,7 +70,7 @@ def verify_data_quality(db: DatabaseManager, current_week: int) -> dict:
         SELECT COUNT(*) 
         FROM games 
         WHERE season = 2025 
-        AND week = ? 
+        AND week = %s
         AND home_score IS NOT NULL
     """, (current_week - 1,))
     games_count = games_result[0][0] if games_result else 0
@@ -79,17 +79,11 @@ def verify_data_quality(db: DatabaseManager, current_week: int) -> dict:
         SELECT COUNT(*) 
         FROM injuries 
         WHERE season = 2025 
-        AND week = ?
+        AND week = %s
     """, (current_week,))
     injuries_count = injuries_result[0][0] if injuries_result else 0
     
-    snap_result = db.execute_query("""
-        SELECT COUNT(*) 
-        FROM snap_counts 
-        WHERE season = 2025 
-        AND week = ?
-    """, (current_week - 1,))
-    snap_counts = snap_result[0][0] if snap_result else 0
+    snap_counts = 0
     
     quality = {
         'games': games_count,
@@ -100,7 +94,6 @@ def verify_data_quality(db: DatabaseManager, current_week: int) -> dict:
     
     print(f"  ✓ Games from Week {current_week - 1}: {games_count}")
     print(f"  ✓ Injuries for Week {current_week}: {injuries_count}")
-    print(f"  ✓ Snap counts from Week {current_week - 1}: {snap_counts}")
     
     return quality
 
@@ -115,7 +108,7 @@ def main():
     current_week = get_current_nfl_week()
     print(f"📊 Current NFL Week: {current_week}")
     
-    total_steps = 7
+    total_steps = 6
     completed_steps = 0
     failed_steps = []
     
@@ -132,15 +125,7 @@ def main():
     
     time.sleep(2)
     
-    print_step(2, total_steps, "Fetch Snap Counts")
-    if run_script(data_collection_dir / 'fetch_snap_counts.py', "Snap Counts Fetch"):
-        completed_steps += 1
-    else:
-        failed_steps.append("Snap Counts")
-    
-    time.sleep(2)
-    
-    print_step(3, total_steps, "Smart Injury Update (Week-Aware)")
+    print_step(2, total_steps, "Smart Injury Update (Week-Aware)")
     if run_script(data_collection_dir / 'smart_injury_updater.py', "Injury Update"):
         completed_steps += 1
     else:
@@ -148,7 +133,7 @@ def main():
     
     time.sleep(2)
     
-    print_step(4, total_steps, "Fetch Latest Betting Lines")
+    print_step(3, total_steps, "Fetch Latest Betting Lines")
     if run_script(data_collection_dir / 'fetch_betting_lines.py', "Betting Lines Fetch"):
         completed_steps += 1
     else:
@@ -204,6 +189,9 @@ def main():
     print("  2. Check injury impact analysis")
     print("  3. Compare with Vegas lines using odds_comparator.py")
     print("  4. Track ROI with roi_tracker.py")
+    print("\n💡 NOTE: Snap counts tracking not yet implemented")
+    print("    - Using default 65% snap percentage for injury impact")
+    print("    - Add snap_counts table later for enhanced accuracy")
     
     print("\n" + "="*70)
     print("✨ Tuesday Update Complete! Good luck this week! ✨")
