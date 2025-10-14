@@ -58,10 +58,18 @@ def backfill_injury_weeks(db: DatabaseManager, dry_run: bool = False) -> Dict[st
     print("="*60)
     
     injuries = db.execute_query("""
-        SELECT id, player_name, team, date_reported, week
-        FROM injuries
-        WHERE season = 2025
-        ORDER BY date_reported
+        SELECT 
+            i.injury_id,
+            p.name as player_name,
+            COALESCE(t.abbreviation, 'UNK') as team,
+            i.date_reported,
+            i.week
+        FROM injuries i
+        JOIN players p ON i.player_id = p.player_id
+        LEFT JOIN player_seasons ps ON i.player_id = ps.player_id AND i.season = ps.season
+        LEFT JOIN teams t ON ps.team_id = t.team_id
+        WHERE i.season = 2025
+        ORDER BY i.date_reported
     """)
     
     if not injuries:
@@ -80,17 +88,17 @@ def backfill_injury_weeks(db: DatabaseManager, dry_run: bool = False) -> Dict[st
     week_distribution = {}
     
     for injury in injuries:
-        injury_id = injury[0]
-        player_name = injury[1]
-        team = injury[2]
-        date_reported = injury[3]
-        current_week = injury[4]
+        injury_id = injury['injury_id']
+        player_name = injury['player_name']
+        team = injury['team'] or 'Unknown'
+        date_reported = injury['date_reported']
+        current_week = injury['week']
         
         if current_week is not None:
             stats["skipped"] += 1
             continue
         
-        week = date_to_week(date_reported)
+        week = date_to_week(str(date_reported))
         
         if week is None:
             print(f"⚠️  Cannot determine week for {player_name} ({team}) - {date_reported}")
@@ -101,7 +109,7 @@ def backfill_injury_weeks(db: DatabaseManager, dry_run: bool = False) -> Dict[st
             db.execute_update("""
                 UPDATE injuries
                 SET week = ?
-                WHERE id = ?
+                WHERE injury_id = ?
             """, (week, injury_id))
         
         week_distribution[week] = week_distribution.get(week, 0) + 1
