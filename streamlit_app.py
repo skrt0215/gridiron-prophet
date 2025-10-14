@@ -66,151 +66,30 @@ if st.session_state.show_accuracy:
     
     with tab_help:
         st.markdown("""
-        ## Understanding Your Model's Performance
+        ## Understanding The Model's Performance
         
-        ### 📊 What Each Metric Means
+        ### 📊 Key Metrics Explained
         
         **Winner Accuracy**
         - Did you correctly predict which team would win?
-        - This is your most important metric
-        - Target: 60%+ (you're at 68.87%! 🎯)
+        - Target: 60%+
         
         **Spread Accuracy (±3 points)**
         - How close was your predicted point margin?
-        - Within 3 points = highly accurate
         - Target: 40%+
         
         **Spread Accuracy (±7 points)**
         - Were you in the general ballpark?
-        - Within 7 points = reasonably accurate
         - Target: 70%+
         
         **Average Margin Error**
-        - Average difference between predicted and actual point margins
-        - Lower is better
-        - Target: Under 7 points
+        - Average difference between predicted and actual margins
+        - Lower is better (Target: Under 7 points)
         
         **HIGH Confidence Accuracy**
         - Performance on your most confident picks
-        - These should be your biggest bets
         - Target: 70%+
-        
-        ---
-        
-        ### 🎯 How to Use This Data
-        
-        **Week by Week:**
-        - Track if you're improving over time
-        - Identify which weeks were toughest
-        - Adjust bet sizing based on recent performance
-        
-        **Confidence Levels:**
-        - If HIGH confidence bets are 70%+, bet bigger on those
-        - If they're below 60%, reduce bet sizes
-        
-        **Spread Accuracy:**
-        - High spread accuracy = your predicted margins are reliable
-        - Low spread accuracy = focus on winner picks only
-        
-        ---
-        
-        ### 💰 Betting Strategy Guide
-        
-        **Understanding the Lines**
-        
-        All spreads show in standard betting format:
-        - **Negative (-)**: Favorite must win by more than this
-        - **Positive (+)**: Underdog can lose by less than this
-        
-        **Example:**
-        ```
-        BAL -7.5  = Baltimore must win by 8+ points
-        BAL +7.5  = Baltimore can lose by 7 or fewer
-        ```
-        
-        **Edge = Model Line - Vegas Line**
-        
-        - **Negative Edge**: Our model likes the home team more than Vegas
-        - **Positive Edge**: Our model likes the away team more than Vegas
-        
-        **Real Example:**
-        ```
-        LA @ BAL
-        Our Line:  BAL -0.7  (we think BAL slight favorite)
-        Vegas:     BAL +7.5  (Vegas has BAL as underdog)
-        Edge:      -8.2 points
-        
-        BET: BAL +7.5
-        
-        Why? Our model thinks BAL should be favored, 
-        but Vegas has them as a big underdog. We're 
-        getting 7.5 extra points on a team we think 
-        is actually better!
-        ```
-        
-        ---
-        
-        ### 📏 Edge Thresholds
-        
-        | Edge Value | Meaning | Action |
-        |------------|---------|--------|
-        | **≥ 10 pts** | 🔥 Huge disagreement | Best bets |
-        | **7-9 pts** | 🔥 Significant edge | Very good |
-        | **5-6 pts** | ⚡ Moderate edge | Good value |
-        | **3-4 pts** | ⚠️ Slight edge | Minimum bet |
-        | **< 3 pts** | ❌ Too small | Skip |
-        
-        ---
-        
-        ### 🎲 Confidence Levels Explained
-        
-        **HIGH Confidence** 🟢
-        - Multiple factors align (ML model, injuries, records)
-        - Edge typically ≥7 points
-        - Historical accuracy > 70%
-        - **Bet bigger here**
-        
-        **MEDIUM Confidence** 🟡
-        - Some factors align, others conflict
-        - Edge typically 5-6 points
-        - Historical accuracy ~65%
-        - **Standard bet size**
-        
-        **LOW Confidence** 🔴
-        - Mixed signals
-        - Edge typically 3-4 points
-        - Historical accuracy < 60%
-        - **Small bet or skip**
-        
-        ---
-        
-        ### 💵 Bankroll Management
-        
-        A suggested **unit system**:
-        - **1 unit** = 1-2% of total bankroll
-        - **HIGH confidence** = 2-3 units
-        - **MEDIUM confidence** = 1-2 units
-        - **LOW confidence** = 0.5-1 unit or skip
-        
-        **Example with $1,000 bankroll:**
-        - 1 unit = $10-20
-        - HIGH confidence bet = $20-60
-        - MEDIUM confidence bet = $10-40
-        - LOW confidence bet = $5-20 or pass
-        
-        **Never bet more than 5% of your bankroll on a single game.**
-        
-        ---
-        
-        ### ⚠️ Important Notes
-        
-        - Past performance doesn't guarantee future results
-        - No model is 100% accurate
-        - Vegas lines are highly efficient
-        - **Always bet responsibly**
-        - Set a budget and stick to it
-        - Never chase losses
-        """)
+                    """)
     
     with tab_accuracy:
         db = DatabaseManager()
@@ -489,55 +368,6 @@ if st.session_state.show_accuracy:
         else:
             st.info(f"No accuracy data available for {season} season yet.")
             
-            st.markdown("""
-            ### 📝 How to Track Accuracy
-            
-            **Automated Tracking (Recommended):**
-            1. Run predictions with storage enabled:
-               ```bash
-               python src/models/master_betting_predictor.py
-               ```
-               This automatically stores predictions before games.
-            
-            2. After games complete, calculate accuracy:
-               ```bash
-               python src/analysis/calculate_weekly_accuracy.py --season 2025 --week 7
-               ```
-            
-            ### 📊 View Detailed Stats
-            ```bash
-            python src/analysis/calculate_weekly_accuracy.py --season 2025 --view --detailed
-            ```
-            """)
-            
-            with st.expander("🛠️ Setup Database Tables"):
-                st.code("""
-CREATE TABLE IF NOT EXISTS predictions (
-    prediction_id INT PRIMARY KEY AUTO_INCREMENT,
-    season INT NOT NULL,
-    week INT NOT NULL,
-    game_id INT NOT NULL,
-    home_team VARCHAR(10) NOT NULL,
-    away_team VARCHAR(10) NOT NULL,
-    predicted_home_score DECIMAL(5,2),
-    predicted_away_score DECIMAL(5,2),
-    predicted_winner ENUM('HOME', 'AWAY') NOT NULL,
-    model_spread DECIMAL(5,2),
-    confidence ENUM('HIGH', 'MEDIUM', 'LOW'),
-    recommended_bet VARCHAR(50),
-    edge DECIMAL(5,2),
-    prediction_date DATETIME,
-    UNIQUE KEY unique_prediction (season, week, game_id)
-);
-
-ALTER TABLE weekly_accuracy 
-ADD COLUMN spread_3pt_accuracy DECIMAL(5,2),
-ADD COLUMN spread_7pt_accuracy DECIMAL(5,2),
-ADD COLUMN avg_margin_error DECIMAL(5,2),
-ADD COLUMN high_conf_total INT,
-ADD COLUMN high_conf_correct INT;
-                """, language="sql")
-
 elif st.session_state.get('faq_option') == "How It Works":
     st.header("📖 Understanding Gridiron Prophet")
     
