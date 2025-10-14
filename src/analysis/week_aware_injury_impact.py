@@ -42,7 +42,7 @@ class InjuryImpactCalculator:
         self.db = db
         
     def get_current_week_injuries(self, team: str, week: int, season: int = 2025) -> List[Dict]:
-        injuries = self.db.fetch_all("""
+        injuries = self.db.execute_query("""
             SELECT 
                 i.player_name,
                 i.position,
@@ -207,7 +207,7 @@ def main():
         
         print(f"\n📅 Analyzing Week {current_week} Injuries\n")
         
-        teams = db.fetch_all("""
+        teams = db.execute_query("""
             SELECT DISTINCT team
             FROM injuries
             WHERE season = 2025
@@ -234,8 +234,10 @@ def main():
             bar = "█" * int(impact * 10)
             print(f"{rank:2d}. {team:20s} Impact: {impact:5.2f} {bar} ({count} injuries)")
         
-    finally:
-        db.close()
+    except Exception as e:
+        print(f"\n❌ Error: {e}")
+        import traceback
+        traceback.print_exc()
 
 
 if __name__ == "__main__":
