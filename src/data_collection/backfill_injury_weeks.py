@@ -108,8 +108,8 @@ def backfill_injury_weeks(db: DatabaseManager, dry_run: bool = False) -> Dict[st
         if not dry_run:
             db.execute_update("""
                 UPDATE injuries
-                SET week = ?
-                WHERE injury_id = ?
+                SET week = %s
+                WHERE injury_id = %s
             """, (week, injury_id))
         
         week_distribution[week] = week_distribution.get(week, 0) + 1
