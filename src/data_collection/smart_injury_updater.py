@@ -181,11 +181,13 @@ def update_injuries_smart(db: DatabaseManager, injuries: List[Dict]) -> Dict[str
             
             team_id = team_data['team_id']
             
-            player = db.get_or_create_player(
+            player_id = db.get_or_create_player(
                 name=injury['player_name'],
                 position=injury['position']
             )
-            player_id = player['player_id']
+            
+            if isinstance(player_id, dict):
+                player_id = player_id['player_id']
             
             try:
                 db.add_injury(
