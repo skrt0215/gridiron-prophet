@@ -3,7 +3,7 @@ from pathlib import Path
 from datetime import datetime, timedelta
 from typing import Dict, Optional
 
-project_root = Path(__file__).parent.parent
+project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 from src.database.db_manager import DatabaseManager
@@ -57,7 +57,7 @@ def backfill_injury_weeks(db: DatabaseManager, dry_run: bool = False) -> Dict[st
     print("🏈 BACKFILLING INJURY WEEKS")
     print("="*60)
     
-    injuries = db.fetch_all("""
+    injuries = db.execute_query("""
         SELECT id, player_name, team, date_reported, week
         FROM injuries
         WHERE season = 2025
@@ -98,7 +98,7 @@ def backfill_injury_weeks(db: DatabaseManager, dry_run: bool = False) -> Dict[st
             continue
         
         if not dry_run:
-            db.execute("""
+            db.execute_update("""
                 UPDATE injuries
                 SET week = ?
                 WHERE id = ?
@@ -145,8 +145,10 @@ def main():
         else:
             print("\n❌ Cancelled - No changes made")
             
-    finally:
-        db.close()
+    except Exception as e:
+        print(f"\n❌ Error: {e}")
+        import traceback
+        traceback.print_exc()
 
 
 if __name__ == "__main__":

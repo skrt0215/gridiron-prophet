@@ -6,7 +6,7 @@ from bs4 import BeautifulSoup
 from typing import List, Dict, Optional
 import time
 
-project_root = Path(__file__).parent.parent
+project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 from src.database.db_manager import DatabaseManager
