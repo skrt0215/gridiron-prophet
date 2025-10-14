@@ -156,12 +156,12 @@ def update_injuries_smart(db: DatabaseManager, injuries: List[Dict]) -> Dict[str
             if old_status != new_status or old_week != current_week:
                 db.execute_update("""
                     UPDATE injuries
-                    SET injury_status = ?,
-                        body_part = ?,
-                        date_reported = ?,
-                        week = ?,
-                        notes = ?
-                    WHERE injury_id = ?
+                    SET injury_status = %s,
+                        body_part = %s,
+                        date_reported = %s,
+                        week = %s,
+                        notes = %s
+                    WHERE injury_id = %s
                 """, (
                     new_status,
                     injury['injury_description'],
@@ -199,10 +199,10 @@ def update_injuries_smart(db: DatabaseManager, injuries: List[Dict]) -> Dict[str
                 
                 db.execute_update("""
                     UPDATE injuries
-                    SET week = ?
-                    WHERE player_id = ?
-                    AND season = ?
-                    AND date_reported = ?
+                    SET week = %s
+                    WHERE player_id = %s
+                    AND season = %s
+                    AND date_reported = %s
                 """, (current_week, player_id, injury['season'], injury['date_reported']))
                 
                 stats['new'] += 1
@@ -213,7 +213,7 @@ def update_injuries_smart(db: DatabaseManager, injuries: List[Dict]) -> Dict[str
         if player_key not in fetched_players and data['week'] == current_week:
             db.execute_update("""
                 DELETE FROM injuries
-                WHERE injury_id = ?
+                WHERE injury_id = %s
             """, (data['injury_id'],))
             stats['resolved'] += 1
     

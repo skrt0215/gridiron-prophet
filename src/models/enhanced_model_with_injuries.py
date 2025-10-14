@@ -45,9 +45,9 @@ def calculate_injury_impact(db: DatabaseManager, team: str, week: int, season: i
         JOIN players p ON i.player_id = p.player_id
         JOIN player_seasons ps ON i.player_id = ps.player_id AND i.season = ps.season
         JOIN teams t ON ps.team_id = t.team_id
-        WHERE t.abbreviation = ?
-        AND i.season = ?
-        AND i.week = ?
+        WHERE t.abbreviation = %s
+        AND i.season = %s
+        AND i.week = %s
     """, (team, season, week))
     
     if not injuries:
@@ -216,23 +216,23 @@ def get_team_recent_performance(db: DatabaseManager, team: str, season: int, wee
     query = """
         SELECT 
             CASE 
-                WHEN ht.abbreviation = ? THEN g.home_score
+                WHEN ht.abbreviation = %s THEN g.home_score
                 ELSE g.away_score
             END as team_score,
             CASE 
-                WHEN ht.abbreviation = ? THEN g.away_score
+                WHEN ht.abbreviation = %s THEN g.away_score
                 ELSE g.home_score
             END as opp_score,
             CASE 
-                WHEN ht.abbreviation = ? THEN 1
+                WHEN ht.abbreviation = %s THEN 1
                 ELSE 0
             END as is_home
         FROM games g
         JOIN teams ht ON g.home_team_id = ht.team_id
         JOIN teams at ON g.away_team_id = at.team_id
-        WHERE (ht.abbreviation = ? OR at.abbreviation = ?)
-        AND g.season = ?
-        AND g.week < ?
+        WHERE (ht.abbreviation = %s OR at.abbreviation = %s)
+        AND g.season = %s
+        AND g.week < %s
         AND g.home_score IS NOT NULL
         ORDER BY g.week DESC
         LIMIT 5
