@@ -40,106 +40,503 @@ if st.sidebar.button("📊 View Weekly Accuracy", use_container_width=True):
 if 'show_accuracy' not in st.session_state:
     st.session_state.show_accuracy = False
 
-if faq_option != "Select...":
-    st.session_state.show_accuracy = False
-    st.session_state.faq_option = faq_option
-    st.session_state.analysis_type = None
+if 'prev_faq' not in st.session_state:
+    st.session_state.prev_faq = "Select..."
 
-if analysis_type and not st.session_state.get('faq_option'):
+if 'prev_analysis' not in st.session_state:
+    st.session_state.prev_analysis = "Weekly Predictions"
+
+if faq_option != st.session_state.prev_faq:
+    if faq_option != "Select...":
+        st.session_state.show_accuracy = False
+        st.session_state.faq_option = faq_option
+        st.session_state.analysis_type = None
+    st.session_state.prev_faq = faq_option
+
+if analysis_type != st.session_state.prev_analysis:
     st.session_state.show_accuracy = False
     st.session_state.analysis_type = analysis_type
+    st.session_state.faq_option = None
+    st.session_state.prev_analysis = analysis_type
 
 if st.session_state.show_accuracy:
     st.header("📊 Weekly Accuracy Tracking")
     
-    db = DatabaseManager()
+    tab_help, tab_accuracy = st.tabs(["💡 How to Read This", "📈 Accuracy Data"])
     
-    accuracy_data = db.execute_query("""
-        SELECT 
-            week,
-            total_predictions,
-            correct_predictions,
-            accuracy_pct,
-            calculated_date
-        FROM weekly_accuracy
-        WHERE season = %s
-        ORDER BY week
-    """, (season,))
-    
-    if accuracy_data:
-        df = pd.DataFrame(accuracy_data)
-        
-        col1, col2, col3 = st.columns(3)
-        
-        with col1:
-            total_correct = df['correct_predictions'].sum()
-            total_games = df['total_predictions'].sum()
-            overall_accuracy = (total_correct / total_games * 100) if total_games > 0 else 0
-            st.metric("Overall Accuracy", f"{overall_accuracy:.1f}%", f"{total_correct}/{total_games}")
-        
-        with col2:
-            best_week = df.loc[df['accuracy_pct'].idxmax()]
-            st.metric("Best Week", f"Week {best_week['week']}", f"{best_week['accuracy_pct']:.1f}%")
-        
-        with col3:
-            latest_week = df.iloc[-1]
-            st.metric("Latest Week", f"Week {latest_week['week']}", f"{latest_week['accuracy_pct']:.1f}%")
-        
-        st.subheader("Accuracy Trend")
-        
-        fig = go.Figure()
-        
-        fig.add_trace(go.Scatter(
-            x=df['week'],
-            y=df['accuracy_pct'],
-            mode='lines+markers',
-            name='Weekly Accuracy',
-            line=dict(color='#1f77b4', width=3),
-            marker=dict(size=10)
-        ))
-        
-        fig.add_hline(
-            y=overall_accuracy, 
-            line_dash="dash", 
-            line_color="green",
-            annotation_text=f"Season Avg: {overall_accuracy:.1f}%"
-        )
-        
-        fig.update_layout(
-            title=f"{season} Season Accuracy by Week",
-            xaxis_title="Week",
-            yaxis_title="Accuracy (%)",
-            hovermode='x unified',
-            height=500
-        )
-        
-        st.plotly_chart(fig, use_container_width=True)
-        
-        st.subheader("Detailed Results")
-        
-        display_df = df.copy()
-        display_df['accuracy_pct'] = display_df['accuracy_pct'].apply(lambda x: f"{x:.1f}%")
-        display_df['record'] = display_df.apply(
-            lambda row: f"{row['correct_predictions']}-{row['total_predictions'] - row['correct_predictions']}", 
-            axis=1
-        )
-        display_df = display_df[['week', 'record', 'accuracy_pct', 'calculated_date']]
-        display_df.columns = ['Week', 'Record (W-L)', 'Accuracy', 'Date Calculated']
-        
-        st.dataframe(display_df, use_container_width=True, hide_index=True)
-        
-    else:
-        st.info(f"No accuracy data available for {season} season yet.")
+    with tab_help:
         st.markdown("""
-        ### How to Add Accuracy Data
+        ## Understanding Your Model's Performance
         
-        After each week's games complete, run:
-        ```bash
-        python src/analysis/calculate_weekly_accuracy.py
+        ### 📊 What Each Metric Means
+        
+        **Winner Accuracy**
+        - Did you correctly predict which team would win?
+        - This is your most important metric
+        - Target: 60%+ (you're at 68.87%! 🎯)
+        
+        **Spread Accuracy (±3 points)**
+        - How close was your predicted point margin?
+        - Within 3 points = highly accurate
+        - Target: 40%+
+        
+        **Spread Accuracy (±7 points)**
+        - Were you in the general ballpark?
+        - Within 7 points = reasonably accurate
+        - Target: 70%+
+        
+        **Average Margin Error**
+        - Average difference between predicted and actual point margins
+        - Lower is better
+        - Target: Under 7 points
+        
+        **HIGH Confidence Accuracy**
+        - Performance on your most confident picks
+        - These should be your biggest bets
+        - Target: 70%+
+        
+        ---
+        
+        ### 🎯 How to Use This Data
+        
+        **Week by Week:**
+        - Track if you're improving over time
+        - Identify which weeks were toughest
+        - Adjust bet sizing based on recent performance
+        
+        **Confidence Levels:**
+        - If HIGH confidence bets are 70%+, bet bigger on those
+        - If they're below 60%, reduce bet sizes
+        
+        **Spread Accuracy:**
+        - High spread accuracy = your predicted margins are reliable
+        - Low spread accuracy = focus on winner picks only
+        
+        ---
+        
+        ### 💰 Betting Strategy Guide
+        
+        **Understanding the Lines**
+        
+        All spreads show in standard betting format:
+        - **Negative (-)**: Favorite must win by more than this
+        - **Positive (+)**: Underdog can lose by less than this
+        
+        **Example:**
+        ```
+        BAL -7.5  = Baltimore must win by 8+ points
+        BAL +7.5  = Baltimore can lose by 7 or fewer
         ```
         
-        This will calculate and store your model's accuracy for that week.
+        **Edge = Model Line - Vegas Line**
+        
+        - **Negative Edge**: Our model likes the home team more than Vegas
+        - **Positive Edge**: Our model likes the away team more than Vegas
+        
+        **Real Example:**
+        ```
+        LA @ BAL
+        Our Line:  BAL -0.7  (we think BAL slight favorite)
+        Vegas:     BAL +7.5  (Vegas has BAL as underdog)
+        Edge:      -8.2 points
+        
+        BET: BAL +7.5
+        
+        Why? Our model thinks BAL should be favored, 
+        but Vegas has them as a big underdog. We're 
+        getting 7.5 extra points on a team we think 
+        is actually better!
+        ```
+        
+        ---
+        
+        ### 📏 Edge Thresholds
+        
+        | Edge Value | Meaning | Action |
+        |------------|---------|--------|
+        | **≥ 10 pts** | 🔥 Huge disagreement | Best bets |
+        | **7-9 pts** | 🔥 Significant edge | Very good |
+        | **5-6 pts** | ⚡ Moderate edge | Good value |
+        | **3-4 pts** | ⚠️ Slight edge | Minimum bet |
+        | **< 3 pts** | ❌ Too small | Skip |
+        
+        ---
+        
+        ### 🎲 Confidence Levels Explained
+        
+        **HIGH Confidence** 🟢
+        - Multiple factors align (ML model, injuries, records)
+        - Edge typically ≥7 points
+        - Historical accuracy > 70%
+        - **Bet bigger here**
+        
+        **MEDIUM Confidence** 🟡
+        - Some factors align, others conflict
+        - Edge typically 5-6 points
+        - Historical accuracy ~65%
+        - **Standard bet size**
+        
+        **LOW Confidence** 🔴
+        - Mixed signals
+        - Edge typically 3-4 points
+        - Historical accuracy < 60%
+        - **Small bet or skip**
+        
+        ---
+        
+        ### 💵 Bankroll Management
+        
+        A suggested **unit system**:
+        - **1 unit** = 1-2% of total bankroll
+        - **HIGH confidence** = 2-3 units
+        - **MEDIUM confidence** = 1-2 units
+        - **LOW confidence** = 0.5-1 unit or skip
+        
+        **Example with $1,000 bankroll:**
+        - 1 unit = $10-20
+        - HIGH confidence bet = $20-60
+        - MEDIUM confidence bet = $10-40
+        - LOW confidence bet = $5-20 or pass
+        
+        **Never bet more than 5% of your bankroll on a single game.**
+        
+        ---
+        
+        ### ⚠️ Important Notes
+        
+        - Past performance doesn't guarantee future results
+        - No model is 100% accurate
+        - Vegas lines are highly efficient
+        - **Always bet responsibly**
+        - Set a budget and stick to it
+        - Never chase losses
         """)
+    
+    with tab_accuracy:
+        db = DatabaseManager()
+        
+        accuracy_data = db.execute_query("""
+            SELECT 
+                week,
+                total_predictions,
+                correct_predictions,
+                accuracy_pct,
+                spread_3pt_accuracy,
+                spread_7pt_accuracy,
+                avg_margin_error,
+                high_conf_total,
+                high_conf_correct,
+                calculated_date
+            FROM weekly_accuracy
+            WHERE season = %s
+            ORDER BY week
+        """, (season,))
+        
+        if accuracy_data:
+            df = pd.DataFrame(accuracy_data)
+            
+            df['high_conf_accuracy'] = df.apply(
+                lambda row: (row['high_conf_correct'] / row['high_conf_total'] * 100) 
+                if row['high_conf_total'] and row['high_conf_total'] > 0 else None,
+                axis=1
+            )
+            
+            col1, col2, col3, col4 = st.columns(4)
+            
+            with col1:
+                total_correct = df['correct_predictions'].sum()
+                total_games = df['total_predictions'].sum()
+                overall_accuracy = (total_correct / total_games * 100) if total_games > 0 else 0
+                st.metric(
+                    "Overall Winner Accuracy", 
+                    f"{overall_accuracy:.1f}%", 
+                    f"{total_correct}-{total_games - total_correct}"
+                )
+            
+            with col2:
+                avg_spread_3pt = df['spread_3pt_accuracy'].mean() if 'spread_3pt_accuracy' in df.columns else 0
+                st.metric(
+                    "Avg Spread Accuracy (±3pts)", 
+                    f"{avg_spread_3pt:.1f}%" if avg_spread_3pt else "N/A"
+                )
+            
+            with col3:
+                avg_margin = df['avg_margin_error'].mean() if 'avg_margin_error' in df.columns else 0
+                st.metric(
+                    "Avg Point Margin Error", 
+                    f"{avg_margin:.1f} pts" if avg_margin else "N/A"
+                )
+            
+            with col4:
+                high_conf_total = df['high_conf_total'].sum()
+                high_conf_correct = df['high_conf_correct'].sum()
+                high_conf_acc = (high_conf_correct / high_conf_total * 100) if high_conf_total > 0 else 0
+                st.metric(
+                    "HIGH Confidence Accuracy",
+                    f"{high_conf_acc:.1f}%" if high_conf_total > 0 else "N/A",
+                    f"{high_conf_correct}-{high_conf_total - high_conf_correct}" if high_conf_total > 0 else ""
+                )
+            
+            tab1, tab2, tab3 = st.tabs(["📈 Accuracy Trends", "🎯 Performance Analysis", "📋 Detailed Results"])
+            
+            with tab1:
+                st.subheader("Accuracy by Week")
+                
+                fig = go.Figure()
+                
+                fig.add_trace(go.Scatter(
+                    x=df['week'],
+                    y=df['accuracy_pct'],
+                    mode='lines+markers',
+                    name='Winner Accuracy',
+                    line=dict(color='#1f77b4', width=3),
+                    marker=dict(size=10),
+                    hovertemplate='Week %{x}<br>Accuracy: %{y:.1f}%<extra></extra>'
+                ))
+                
+                if 'spread_3pt_accuracy' in df.columns and df['spread_3pt_accuracy'].notna().any():
+                    fig.add_trace(go.Scatter(
+                        x=df['week'],
+                        y=df['spread_3pt_accuracy'],
+                        mode='lines+markers',
+                        name='Spread Accuracy (±3pts)',
+                        line=dict(color='#ff7f0e', width=2, dash='dash'),
+                        marker=dict(size=8),
+                        hovertemplate='Week %{x}<br>±3pts: %{y:.1f}%<extra></extra>'
+                    ))
+                
+                high_conf_weeks = df[df['high_conf_accuracy'].notna()]
+                if not high_conf_weeks.empty:
+                    fig.add_trace(go.Scatter(
+                        x=high_conf_weeks['week'],
+                        y=high_conf_weeks['high_conf_accuracy'],
+                        mode='lines+markers',
+                        name='HIGH Confidence',
+                        line=dict(color='#2ca02c', width=2),
+                        marker=dict(size=8, symbol='star'),
+                        hovertemplate='Week %{x}<br>HIGH Conf: %{y:.1f}%<extra></extra>'
+                    ))
+                
+                fig.add_hline(
+                    y=overall_accuracy, 
+                    line_dash="dot", 
+                    line_color="rgba(128,128,128,0.5)",
+                    annotation_text=f"Season Avg: {overall_accuracy:.1f}%",
+                    annotation_position="right"
+                )
+                
+                fig.update_layout(
+                    title=f"{season} Season Accuracy Trends",
+                    xaxis_title="Week",
+                    yaxis_title="Accuracy (%)",
+                    hovermode='x unified',
+                    height=500,
+                    legend=dict(
+                        orientation="h",
+                        yanchor="bottom",
+                        y=1.02,
+                        xanchor="right",
+                        x=1
+                    )
+                )
+                
+                st.plotly_chart(fig, use_container_width=True)
+            
+            with tab2:
+                st.subheader("Performance Breakdown")
+                
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    if df['high_conf_total'].sum() > 0:
+                        high_conf_acc = (df['high_conf_correct'].sum() / df['high_conf_total'].sum() * 100)
+                        
+                        conf_data = pd.DataFrame({
+                            'Confidence Level': ['HIGH Confidence', 'Overall'],
+                            'Accuracy': [high_conf_acc, overall_accuracy],
+                            'Games': [df['high_conf_total'].sum(), total_games]
+                        })
+                        
+                        fig_conf = px.bar(
+                            conf_data,
+                            x='Confidence Level',
+                            y='Accuracy',
+                            text='Accuracy',
+                            title='Accuracy by Confidence Level',
+                            color='Confidence Level',
+                            color_discrete_map={'HIGH Confidence': '#2ca02c', 'Overall': '#1f77b4'}
+                        )
+                        
+                        fig_conf.update_traces(texttemplate='%{text:.1f}%', textposition='outside')
+                        fig_conf.update_layout(showlegend=False, height=400)
+                        
+                        st.plotly_chart(fig_conf, use_container_width=True)
+                
+                with col2:
+                    if 'avg_margin_error' in df.columns and df['avg_margin_error'].notna().any():
+                        fig_margin = px.line(
+                            df,
+                            x='week',
+                            y='avg_margin_error',
+                            markers=True,
+                            title='Average Point Margin Error',
+                            labels={'week': 'Week', 'avg_margin_error': 'Avg Margin Error (pts)'}
+                        )
+                        
+                        fig_margin.update_traces(line_color='#d62728', marker_size=10)
+                        fig_margin.update_layout(height=400)
+                        
+                        st.plotly_chart(fig_margin, use_container_width=True)
+                
+                st.subheader("Weekly Win Distribution")
+                
+                weekly_wins = df['correct_predictions'].values
+                
+                win_counts = pd.Series(weekly_wins).value_counts().sort_index()
+                
+                fig_dist = px.bar(
+                    x=win_counts.index,
+                    y=win_counts.values,
+                    labels={'x': 'Correct Predictions', 'y': 'Number of Weeks'},
+                    title=f'Distribution of Weekly Performance',
+                    text=win_counts.values
+                )
+                
+                fig_dist.update_traces(textposition='outside', marker_color='#17becf')
+                fig_dist.update_layout(height=400)
+                
+                st.plotly_chart(fig_dist, use_container_width=True)
+            
+            with tab3:
+                st.subheader("Detailed Weekly Results")
+                
+                display_df = df.copy()
+                display_df['record'] = display_df.apply(
+                    lambda row: f"{row['correct_predictions']}-{row['total_predictions'] - row['correct_predictions']}", 
+                    axis=1
+                )
+                
+                display_cols = ['week', 'record', 'accuracy_pct']
+                col_names = ['Week', 'Record (W-L)', 'Winner %']
+                
+                if 'spread_3pt_accuracy' in display_df.columns:
+                    display_cols.append('spread_3pt_accuracy')
+                    col_names.append('±3pts %')
+                
+                if 'spread_7pt_accuracy' in display_df.columns:
+                    display_cols.append('spread_7pt_accuracy')
+                    col_names.append('±7pts %')
+                
+                if 'avg_margin_error' in display_df.columns:
+                    display_cols.append('avg_margin_error')
+                    col_names.append('Avg Margin Error')
+                
+                if 'high_conf_accuracy' in display_df.columns:
+                    high_conf_col = display_df.apply(
+                        lambda row: f"{row['high_conf_accuracy']:.1f}% ({row['high_conf_correct']}/{row['high_conf_total']})" 
+                        if row['high_conf_total'] and row['high_conf_total'] > 0 
+                        else "N/A",
+                        axis=1
+                    )
+                    display_df['high_conf_display'] = high_conf_col
+                    display_cols.append('high_conf_display')
+                    col_names.append('HIGH Conf')
+                
+                display_cols.append('calculated_date')
+                col_names.append('Date')
+                
+                display_df = display_df[display_cols]
+                
+                for col in ['accuracy_pct', 'spread_3pt_accuracy', 'spread_7pt_accuracy']:
+                    if col in display_df.columns:
+                        display_df[col] = display_df[col].apply(lambda x: f"{x:.1f}%" if pd.notna(x) else "N/A")
+                
+                if 'avg_margin_error' in display_df.columns:
+                    display_df['avg_margin_error'] = display_df['avg_margin_error'].apply(
+                        lambda x: f"{x:.1f} pts" if pd.notna(x) else "N/A"
+                    )
+                
+                display_df.columns = col_names
+                
+                st.dataframe(display_df, use_container_width=True, hide_index=True)
+                
+                csv = display_df.to_csv(index=False)
+                st.download_button(
+                    label="📥 Download Accuracy Data",
+                    data=csv,
+                    file_name=f"gridiron_prophet_accuracy_{season}.csv",
+                    mime="text/csv"
+                )
+            
+            st.subheader("📊 Season Highlights")
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                best_week = df.loc[df['accuracy_pct'].idxmax()]
+                st.success(f"**Best Week:** Week {best_week['week']}")
+                st.write(f"✓ {best_week['correct_predictions']}/{best_week['total_predictions']} ({best_week['accuracy_pct']:.1f}%)")
+            
+            with col2:
+                worst_week = df.loc[df['accuracy_pct'].idxmin()]
+                st.error(f"**Toughest Week:** Week {worst_week['week']}")
+                st.write(f"✓ {worst_week['correct_predictions']}/{worst_week['total_predictions']} ({worst_week['accuracy_pct']:.1f}%)")
+            
+            with col3:
+                latest_week = df.iloc[-1]
+                st.info(f"**Latest Week:** Week {latest_week['week']}")
+                st.write(f"✓ {latest_week['correct_predictions']}/{latest_week['total_predictions']} ({latest_week['accuracy_pct']:.1f}%)")
+            
+        else:
+            st.info(f"No accuracy data available for {season} season yet.")
+            
+            st.markdown("""
+            ### 📝 How to Track Accuracy
+            
+            **Automated Tracking (Recommended):**
+            1. Run predictions with storage enabled:
+               ```bash
+               python src/models/master_betting_predictor.py
+               ```
+               This automatically stores predictions before games.
+            
+            2. After games complete, calculate accuracy:
+               ```bash
+               python src/analysis/calculate_weekly_accuracy.py --season 2025 --week 7
+               ```
+            
+            ### 📊 View Detailed Stats
+            ```bash
+            python src/analysis/calculate_weekly_accuracy.py --season 2025 --view --detailed
+            ```
+            """)
+            
+            with st.expander("🛠️ Setup Database Tables"):
+                st.code("""
+CREATE TABLE IF NOT EXISTS predictions (
+    prediction_id INT PRIMARY KEY AUTO_INCREMENT,
+    season INT NOT NULL,
+    week INT NOT NULL,
+    game_id INT NOT NULL,
+    home_team VARCHAR(10) NOT NULL,
+    away_team VARCHAR(10) NOT NULL,
+    predicted_home_score DECIMAL(5,2),
+    predicted_away_score DECIMAL(5,2),
+    predicted_winner ENUM('HOME', 'AWAY') NOT NULL,
+    model_spread DECIMAL(5,2),
+    confidence ENUM('HIGH', 'MEDIUM', 'LOW'),
+    recommended_bet VARCHAR(50),
+    edge DECIMAL(5,2),
+    prediction_date DATETIME,
+    UNIQUE KEY unique_prediction (season, week, game_id)
+);
+
+ALTER TABLE weekly_accuracy 
+ADD COLUMN spread_3pt_accuracy DECIMAL(5,2),
+ADD COLUMN spread_7pt_accuracy DECIMAL(5,2),
+ADD COLUMN avg_margin_error DECIMAL(5,2),
+ADD COLUMN high_conf_total INT,
+ADD COLUMN high_conf_correct INT;
+                """, language="sql")
 
 elif st.session_state.get('faq_option') == "How It Works":
     st.header("📖 Understanding Gridiron Prophet")
