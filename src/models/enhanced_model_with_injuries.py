@@ -24,29 +24,71 @@ POSITION_WEIGHTS = {
     'LB': 0.5,
     'DB': 0.4,
     'K': 0.2,
-    'P': 0.1
+    'P': 0.1,
+    'LS': 0.1
 }
 
 INJURY_STATUS_MULTIPLIERS = {
     'Out': 1.0,
-    'Doubtful': 0.75,
-    'Questionable': 0.4,
-    'Probable': 0.1
+    'IR': 1.0,
+    'PUP': 0.9,
+    'Questionable': 0.4
 }
 
 
 def calculate_injury_impact(db: DatabaseManager, team: str, week: int, season: int = 2025) -> Dict[str, float]:
     injuries = db.execute_query("""
-        SELECT i.position, i.injury_status, COALESCE(sc.snap_percentage, 50.0)
+        SELECT 
+            ps.position,
+            i.injury_status
         FROM injuries i
-        LEFT JOIN snap_counts sc ON i.player_name = sc.player_name 
-            AND i.team = sc.team 
-            AND sc.season = ?
-            AND sc.week < ?
-        WHERE i.team = ?
+        JOIN players p ON i.player_id = p.player_id
+        JOIN player_seasons ps ON i.player_id = ps.player_id AND i.season = ps.season
+        JOIN teams t ON ps.team_id = t.team_id
+        WHERE t.abbreviation = ?
         AND i.season = ?
         AND i.week = ?
-    """, (season, week, team, season, week))
+    """, (team, season, week))
+    
+    if not injuries:
+        return {
+            'total_impact': 0.0,
+            'qb_impact': 0.0,
+            'skill_impact': 0.0,
+            'defense_impact': 0.0,
+            'injury_count': 0
+        }
+    
+    total_impact = 0.0
+    qb_impact = 0.0
+    skill_impact = 0.0
+    defense_impact = 0.0
+    
+    for injury in injuries:
+        position = injury['position'] if isinstance(injury, dict) else injury[0]
+        status = injury['injury_status'] if isinstance(injury, dict) else injury[1]
+        
+        pos_weight = POSITION_WEIGHTS.get(position, 0.3)
+        status_mult = INJURY_STATUS_MULTIPLIERS.get(status, 0.5)
+        snap_factor = 0.65
+        
+        impact = pos_weight * status_mult * snap_factor
+        total_impact += impact
+        
+        if position == 'QB':
+            qb_impact += impact
+        elif position in ['RB', 'WR', 'TE']:
+            skill_impact += impact
+        elif position in ['DL', 'LB', 'DB']:
+            defense_impact += impact
+    
+    return {
+        'total_impact': total_impact,
+        'qb_impact': qb_impact,
+        'skill_impact': skill_impact,
+        'defense_impact': defense_impact,
+        'injury_count': len(injuries)
+    }
     
     if not injuries:
         return {
@@ -91,20 +133,37 @@ def build_training_features(db: DatabaseManager):
     
     games = db.execute_query("""
         SELECT 
-            game_id, season, week, home_team, away_team,
-            home_score, away_score, game_date
-        FROM games
-        WHERE home_score IS NOT NULL
-        AND away_score IS NOT NULL
-        AND season >= 2022
-        ORDER BY season, week
+            g.game_id,
+            g.season,
+            g.week,
+            ht.abbreviation as home_team,
+            at.abbreviation as away_team,
+            g.home_score,
+            g.away_score,
+            g.game_date
+        FROM games g
+        JOIN teams ht ON g.home_team_id = ht.team_id
+        JOIN teams at ON g.away_team_id = at.team_id
+        WHERE g.home_score IS NOT NULL
+        AND g.away_score IS NOT NULL
+        AND g.season >= 2022
+        ORDER BY g.season, g.week
     """)
     
     features_list = []
     labels_list = []
     
     for game in games:
-        game_id, season, week, home_team, away_team, home_score, away_score, game_date = game
+        if isinstance(game, dict):
+            game_id = game['game_id']
+            season = game['season']
+            week = game['week']
+            home_team = game['home_team']
+            away_team = game['away_team']
+            home_score = game['home_score']
+            away_score = game['away_score']
+        else:
+            game_id, season, week, home_team, away_team, home_score, away_score, game_date = game
         
         if week <= 1:
             continue
@@ -157,23 +216,25 @@ def get_team_recent_performance(db: DatabaseManager, team: str, season: int, wee
     query = """
         SELECT 
             CASE 
-                WHEN home_team = ? THEN home_score
-                ELSE away_score
+                WHEN ht.abbreviation = ? THEN g.home_score
+                ELSE g.away_score
             END as team_score,
             CASE 
-                WHEN home_team = ? THEN away_score
-                ELSE home_score
+                WHEN ht.abbreviation = ? THEN g.away_score
+                ELSE g.home_score
             END as opp_score,
             CASE 
-                WHEN home_team = ? THEN 1
+                WHEN ht.abbreviation = ? THEN 1
                 ELSE 0
             END as is_home
-        FROM games
-        WHERE (home_team = ? OR away_team = ?)
-        AND season = ?
-        AND week < ?
-        AND home_score IS NOT NULL
-        ORDER BY week DESC
+        FROM games g
+        JOIN teams ht ON g.home_team_id = ht.team_id
+        JOIN teams at ON g.away_team_id = at.team_id
+        WHERE (ht.abbreviation = ? OR at.abbreviation = ?)
+        AND g.season = ?
+        AND g.week < ?
+        AND g.home_score IS NOT NULL
+        ORDER BY g.week DESC
         LIMIT 5
     """
     
@@ -188,18 +249,25 @@ def get_team_recent_performance(db: DatabaseManager, team: str, season: int, wee
             'recent_form': 0.0
         }
     
-    wins = sum(1 for g in games if g[0] > g[1])
-    total_games = len(games)
+    game_list = []
+    for g in games:
+        if isinstance(g, dict):
+            game_list.append((g['team_score'], g['opp_score'], g['is_home']))
+        else:
+            game_list.append((g[0], g[1], g[2]))
+    
+    wins = sum(1 for g in game_list if g[0] > g[1])
+    total_games = len(game_list)
     win_pct = wins / total_games if total_games > 0 else 0.5
     
-    points_scored = [g[0] for g in games]
-    points_allowed = [g[1] for g in games]
+    points_scored = [g[0] for g in game_list]
+    points_allowed = [g[1] for g in game_list]
     
     ppg = np.mean(points_scored)
     pa_pg = np.mean(points_allowed)
     point_diff = ppg - pa_pg
     
-    recent_form = sum((g[0] > g[1]) for g in games[:3]) / min(3, len(games))
+    recent_form = sum((g[0] > g[1]) for g in game_list[:3]) / min(3, len(game_list))
     
     return {
         'win_pct': win_pct,
