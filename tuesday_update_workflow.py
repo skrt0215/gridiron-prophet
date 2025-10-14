@@ -49,44 +49,47 @@ def run_script(script_path: Path, description: str) -> bool:
 def get_current_nfl_week() -> int:
     db = DatabaseManager()
     try:
-        result = db.fetch_one("""
+        result = db.execute_query("""
             SELECT MAX(week) 
             FROM games 
             WHERE season = 2025 
             AND home_score IS NOT NULL
         """)
         
-        completed_week = result[0] if result and result[0] else 0
+        completed_week = result[0][0] if result and result[0][0] else 0
         return completed_week + 1
-        
-    finally:
-        db.close()
+    except Exception as e:
+        print(f"⚠️  Error getting current week: {e}")
+        return 7
 
 
 def verify_data_quality(db: DatabaseManager, current_week: int) -> dict:
     print("\n🔍 Verifying data quality...")
     
-    games_count = db.fetch_one("""
+    games_result = db.execute_query("""
         SELECT COUNT(*) 
         FROM games 
         WHERE season = 2025 
         AND week = ? 
         AND home_score IS NOT NULL
-    """, (current_week - 1,))[0]
+    """, (current_week - 1,))
+    games_count = games_result[0][0] if games_result else 0
     
-    injuries_count = db.fetch_one("""
+    injuries_result = db.execute_query("""
         SELECT COUNT(*) 
         FROM injuries 
         WHERE season = 2025 
         AND week = ?
-    """, (current_week,))[0]
+    """, (current_week,))
+    injuries_count = injuries_result[0][0] if injuries_result else 0
     
-    snap_counts = db.fetch_one("""
+    snap_result = db.execute_query("""
         SELECT COUNT(*) 
         FROM snap_counts 
         WHERE season = 2025 
         AND week = ?
-    """, (current_week - 1,))[0]
+    """, (current_week - 1,))
+    snap_counts = snap_result[0][0] if snap_result else 0
     
     quality = {
         'games': games_count,
@@ -164,8 +167,9 @@ def main():
         else:
             print("⚠️  Warning: Some data may be incomplete")
             failed_steps.append("Data Quality")
-    finally:
-        db.close()
+    except Exception as e:
+        print(f"❌ Error during verification: {e}")
+        failed_steps.append("Data Quality")
     
     print_step(6, total_steps, "Retrain Enhanced Model")
     if run_script(models_dir / 'enhanced_model_with_injuries.py', "Model Training"):
