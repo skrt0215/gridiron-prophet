@@ -36,7 +36,7 @@ INJURY_STATUS_MULTIPLIERS = {
 
 
 def calculate_injury_impact(db: DatabaseManager, team: str, week: int, season: int = 2025) -> Dict[str, float]:
-    injuries = db.fetch_all("""
+    injuries = db.execute_query("""
         SELECT i.position, i.injury_status, COALESCE(sc.snap_percentage, 50.0)
         FROM injuries i
         LEFT JOIN snap_counts sc ON i.player_name = sc.player_name 
@@ -89,7 +89,7 @@ def calculate_injury_impact(db: DatabaseManager, team: str, week: int, season: i
 def build_training_features(db: DatabaseManager):
     print("🔨 Building training dataset with injury features...")
     
-    games = db.fetch_all("""
+    games = db.execute_query("""
         SELECT 
             game_id, season, week, home_team, away_team,
             home_score, away_score, game_date
@@ -177,7 +177,7 @@ def get_team_recent_performance(db: DatabaseManager, team: str, season: int, wee
         LIMIT 5
     """
     
-    games = db.fetch_all(query, (team, team, team, team, team, season, week))
+    games = db.execute_query(query, (team, team, team, team, team, season, week))
     
     if not games:
         return {
@@ -313,9 +313,10 @@ def main():
     try:
         train_enhanced_model(db)
         print("\n✅ TRAINING COMPLETE!")
-        
-    finally:
-        db.close()
+    except Exception as e:
+        print(f"\n❌ Error: {e}")
+        import traceback
+        traceback.print_exc()
 
 
 if __name__ == "__main__":
