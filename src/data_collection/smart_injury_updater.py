@@ -116,77 +116,125 @@ def update_injuries_smart(db: DatabaseManager, injuries: List[Dict]) -> Dict[str
     current_week = get_current_week()
     
     existing = db.execute_query("""
-        SELECT player_name, team, injury_status, week
-        FROM injuries
-        WHERE season = 2025
+        SELECT 
+            p.name,
+            t.abbreviation,
+            i.injury_status,
+            i.week,
+            i.injury_id,
+            i.player_id
+        FROM injuries i
+        JOIN players p ON i.player_id = p.player_id
+        LEFT JOIN player_seasons ps ON i.player_id = ps.player_id AND i.season = ps.season
+        LEFT JOIN teams t ON ps.team_id = t.team_id
+        WHERE i.season = 2025
     """)
     
     existing_map = {
-        (row[0], row[1]): {'status': row[2], 'week': row[3]}
-        for row in existing
+        (row['name'], row['abbreviation']): {
+            'status': row['injury_status'],
+            'week': row['week'],
+            'injury_id': row['injury_id'],
+            'player_id': row['player_id']
+        }
+        for row in existing if row['abbreviation']
     }
     
     fetched_players = set()
     
     for injury in injuries:
-        player_key = (injury['player_name'], injury['team'])
+        team_abbrev = get_team_abbreviation(injury['team'])
+        player_key = (injury['player_name'], team_abbrev)
         fetched_players.add(player_key)
         
         if player_key in existing_map:
             old_status = existing_map[player_key]['status']
             new_status = injury['injury_status']
             old_week = existing_map[player_key]['week']
+            injury_id = existing_map[player_key]['injury_id']
             
             if old_status != new_status or old_week != current_week:
                 db.execute_update("""
                     UPDATE injuries
                     SET injury_status = ?,
-                        injury_description = ?,
+                        body_part = ?,
                         date_reported = ?,
-                        week = ?
-                    WHERE player_name = ?
-                    AND team = ?
-                    AND season = 2025
+                        week = ?,
+                        notes = ?
+                    WHERE injury_id = ?
                 """, (
                     new_status,
                     injury['injury_description'],
                     injury['date_reported'],
                     current_week,
-                    injury['player_name'],
-                    injury['team']
+                    injury['injury_description'],
+                    injury_id
                 ))
                 stats['updated'] += 1
             else:
                 stats['unchanged'] += 1
         else:
-            db.execute_insert("""
-                INSERT INTO injuries (
-                    player_name, team, position, injury_status,
-                    injury_description, date_reported, season, week
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                injury['player_name'],
-                injury['team'],
-                injury['position'],
-                injury['injury_status'],
-                injury['injury_description'],
-                injury['date_reported'],
-                injury['season'],
-                injury['week']
-            ))
-            stats['new'] += 1
+            team_data = db.get_team_by_abbreviation(team_abbrev)
+            if not team_data:
+                print(f"⚠️  Unknown team: {team_abbrev} for {injury['player_name']}")
+                continue
+            
+            team_id = team_data['team_id']
+            
+            player = db.get_or_create_player(
+                name=injury['player_name'],
+                position=injury['position']
+            )
+            player_id = player['player_id']
+            
+            try:
+                db.add_injury(
+                    player_id=player_id,
+                    season=injury['season'],
+                    injury_status=injury['injury_status'],
+                    date_reported=injury['date_reported'],
+                    body_part=injury['injury_description'],
+                    notes=injury['injury_description']
+                )
+                
+                db.execute_update("""
+                    UPDATE injuries
+                    SET week = ?
+                    WHERE player_id = ?
+                    AND season = ?
+                    AND date_reported = ?
+                """, (current_week, player_id, injury['season'], injury['date_reported']))
+                
+                stats['new'] += 1
+            except Exception as e:
+                print(f"⚠️  Error adding injury for {injury['player_name']}: {e}")
     
     for player_key, data in existing_map.items():
         if player_key not in fetched_players and data['week'] == current_week:
             db.execute_update("""
                 DELETE FROM injuries
-                WHERE player_name = ?
-                AND team = ?
-                AND season = 2025
-            """, player_key)
+                WHERE injury_id = ?
+            """, (data['injury_id'],))
             stats['resolved'] += 1
     
     return stats
+
+
+def get_team_abbreviation(team_name: str) -> str:
+    team_map = {
+        'Arizona Cardinals': 'ARI', 'Atlanta Falcons': 'ATL', 'Baltimore Ravens': 'BAL',
+        'Buffalo Bills': 'BUF', 'Carolina Panthers': 'CAR', 'Chicago Bears': 'CHI',
+        'Cincinnati Bengals': 'CIN', 'Cleveland Browns': 'CLE', 'Dallas Cowboys': 'DAL',
+        'Denver Broncos': 'DEN', 'Detroit Lions': 'DET', 'Green Bay Packers': 'GB',
+        'Houston Texans': 'HOU', 'Indianapolis Colts': 'IND', 'Jacksonville Jaguars': 'JAX',
+        'Kansas City Chiefs': 'KC', 'Las Vegas Raiders': 'LV', 'Los Angeles Chargers': 'LAC',
+        'Los Angeles Rams': 'LA', 'Miami Dolphins': 'MIA', 'Minnesota Vikings': 'MIN',
+        'New England Patriots': 'NE', 'New Orleans Saints': 'NO', 'New York Giants': 'NYG',
+        'New York Jets': 'NYJ', 'Philadelphia Eagles': 'PHI', 'Pittsburgh Steelers': 'PIT',
+        'San Francisco 49ers': 'SF', 'Seattle Seahawks': 'SEA', 'Tampa Bay Buccaneers': 'TB',
+        'Tennessee Titans': 'TEN', 'Washington Commanders': 'WAS'
+    }
+    return team_map.get(team_name, team_name)
 
 
 def main():
