@@ -115,7 +115,7 @@ def update_injuries_smart(db: DatabaseManager, injuries: List[Dict]) -> Dict[str
     
     current_week = get_current_week()
     
-    existing = db.fetch_all("""
+    existing = db.execute_query("""
         SELECT player_name, team, injury_status, week
         FROM injuries
         WHERE season = 2025
@@ -138,7 +138,7 @@ def update_injuries_smart(db: DatabaseManager, injuries: List[Dict]) -> Dict[str
             old_week = existing_map[player_key]['week']
             
             if old_status != new_status or old_week != current_week:
-                db.execute("""
+                db.execute_update("""
                     UPDATE injuries
                     SET injury_status = ?,
                         injury_description = ?,
@@ -159,7 +159,7 @@ def update_injuries_smart(db: DatabaseManager, injuries: List[Dict]) -> Dict[str
             else:
                 stats['unchanged'] += 1
         else:
-            db.execute("""
+            db.execute_insert("""
                 INSERT INTO injuries (
                     player_name, team, position, injury_status,
                     injury_description, date_reported, season, week
@@ -178,7 +178,7 @@ def update_injuries_smart(db: DatabaseManager, injuries: List[Dict]) -> Dict[str
     
     for player_key, data in existing_map.items():
         if player_key not in fetched_players and data['week'] == current_week:
-            db.execute("""
+            db.execute_update("""
                 DELETE FROM injuries
                 WHERE player_name = ?
                 AND team = ?
@@ -216,8 +216,10 @@ def main():
         print(f"  ✅ Resolved: {stats['resolved']}")
         print("-"*60)
         
-    finally:
-        db.close()
+    except Exception as e:
+        print(f"\n❌ Error: {e}")
+        import traceback
+        traceback.print_exc()
 
 
 if __name__ == "__main__":
