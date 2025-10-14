@@ -14,26 +14,19 @@ POSITION_WEIGHTS = {
     'WR': 0.6,
     'TE': 0.5,
     'OL': 0.6,
-    'OG': 0.6,
-    'OT': 0.6,
-    'C': 0.6,
     'DL': 0.6,
-    'DE': 0.6,
-    'DT': 0.6,
     'LB': 0.5,
     'DB': 0.4,
-    'CB': 0.4,
-    'S': 0.4,
     'K': 0.2,
-    'P': 0.1
+    'P': 0.1,
+    'LS': 0.1
 }
 
 INJURY_STATUS_MULTIPLIERS = {
     'Out': 1.0,
-    'Doubtful': 0.75,
-    'Questionable': 0.4,
-    'Probable': 0.1,
-    'IR': 1.0
+    'IR': 1.0,
+    'PUP': 0.9,
+    'Questionable': 0.4
 }
 
 
@@ -44,30 +37,26 @@ class InjuryImpactCalculator:
     def get_current_week_injuries(self, team: str, week: int, season: int = 2025) -> List[Dict]:
         injuries = self.db.execute_query("""
             SELECT 
-                i.player_name,
-                i.position,
+                p.name as player_name,
+                ps.position,
                 i.injury_status,
-                i.injury_description,
-                COALESCE(AVG(sc.snap_percentage), 50.0) as avg_snap_pct
+                COALESCE(i.body_part, 'Unspecified') as injury_description
             FROM injuries i
-            LEFT JOIN snap_counts sc ON 
-                i.player_name = sc.player_name 
-                AND i.team = sc.team 
-                AND sc.season = ?
-                AND sc.week < ?
-            WHERE i.team = ?
+            JOIN players p ON i.player_id = p.player_id
+            JOIN player_seasons ps ON i.player_id = ps.player_id AND i.season = ps.season
+            JOIN teams t ON ps.team_id = t.team_id
+            WHERE t.abbreviation = ?
             AND i.season = ?
             AND i.week = ?
-            GROUP BY i.player_name, i.position, i.injury_status, i.injury_description
-        """, (season, week, team, season, week))
+        """, (team, season, week))
         
         return [
             {
-                'player': row[0],
-                'position': row[1],
-                'status': row[2],
-                'description': row[3],
-                'snap_pct': row[4]
+                'player': row['player_name'] if isinstance(row, dict) else row[0],
+                'position': row['position'] if isinstance(row, dict) else row[1],
+                'status': row['injury_status'] if isinstance(row, dict) else row[2],
+                'description': row['injury_description'] if isinstance(row, dict) else (row[3] or 'N/A'),
+                'snap_pct': 65.0
             }
             for row in injuries
         ]
@@ -107,7 +96,7 @@ class InjuryImpactCalculator:
             
             if position == 'QB':
                 qb_impact += impact
-                if status in ['Out', 'Doubtful', 'IR']:
+                if status in ['Out', 'IR', 'PUP']:
                     critical_injuries.append(f"{injury['player']} (QB - {status})")
             
             elif position in ['RB', 'WR', 'TE']:
@@ -115,12 +104,12 @@ class InjuryImpactCalculator:
                 if status in ['Out', 'IR'] and snap_pct > 50:
                     critical_injuries.append(f"{injury['player']} ({position} - {status})")
             
-            elif position in ['DL', 'DE', 'DT', 'LB', 'DB', 'CB', 'S']:
+            elif position in ['DL', 'LB', 'DB']:
                 defense_impact += impact
                 if status in ['Out', 'IR'] and snap_pct > 60:
                     critical_injuries.append(f"{injury['player']} ({position} - {status})")
             
-            elif position in ['OL', 'OG', 'OT', 'C']:
+            elif position == 'OL':
                 oline_impact += impact
                 if status in ['Out', 'IR']:
                     critical_injuries.append(f"{injury['player']} ({position} - {status})")
@@ -167,7 +156,7 @@ class InjuryImpactCalculator:
         report_lines = [f"\n🏥 {team} Injury Report (Week {week}):"]
         report_lines.append("-" * 50)
         
-        status_groups = {'Out': [], 'Doubtful': [], 'Questionable': [], 'Probable': []}
+        status_groups = {'Out': [], 'IR': [], 'PUP': [], 'Questionable': []}
         
         for injury in injuries:
             status = injury['status']
@@ -208,16 +197,19 @@ def main():
         print(f"\n📅 Analyzing Week {current_week} Injuries\n")
         
         teams = db.execute_query("""
-            SELECT DISTINCT team
-            FROM injuries
-            WHERE season = 2025
-            AND week = ?
-            ORDER BY team
+            SELECT DISTINCT t.abbreviation
+            FROM injuries i
+            JOIN player_seasons ps ON i.player_id = ps.player_id AND i.season = ps.season
+            JOIN teams t ON ps.team_id = t.team_id
+            WHERE i.season = 2025
+            AND i.week = ?
+            ORDER BY t.abbreviation
         """, (current_week,))
         
         team_impacts = []
         
-        for (team,) in teams:
+        for team_row in teams:
+            team = team_row['abbreviation'] if isinstance(team_row, dict) else team_row[0]
             impact = calc.calculate_impact_score(team, current_week)
             team_impacts.append((team, impact['total_impact'], impact['injury_count']))
             
