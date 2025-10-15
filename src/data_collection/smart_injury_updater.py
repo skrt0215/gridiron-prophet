@@ -190,6 +190,20 @@ def update_injuries_smart(db: DatabaseManager, injuries: List[Dict]) -> Dict[str
                 player_id = player_id['player_id']
             
             try:
+                existing_ps = db.execute_query("""
+                    SELECT player_id FROM player_seasons
+                    WHERE player_id = %s AND season = %s
+                """, (player_id, injury['season']))
+                
+                if not existing_ps:
+                    db.add_player_season(
+                        player_id=player_id,
+                        season=injury['season'],
+                        team_id=team_id,
+                        position=injury['position'],
+                        roster_status='Active'
+                    )
+                
                 db.add_injury(
                     player_id=player_id,
                     season=injury['season'],

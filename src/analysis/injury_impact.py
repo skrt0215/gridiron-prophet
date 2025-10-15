@@ -5,12 +5,10 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from database.db_manager import DatabaseManager
 
 class InjuryImpactAnalyzer:
-    """Calculate injury impact scores for teams and games"""
     
     def __init__(self):
         self.db = DatabaseManager()
-   
-        self.MIN_SNAP_THRESHOLD = 0.15  # 15% of snaps
+        self.MIN_SNAP_THRESHOLD = 0.15
         
         self.position_weights = {
             'QB': 1.0,
@@ -44,10 +42,6 @@ class InjuryImpactAnalyzer:
         }
     
     def get_player_importance(self, player_id):
-        """
-        Calculate player importance based on snap counts
-        Returns value 0-1 (1 = starter with high snap count)
-        """
         query = """
             SELECT AVG(snap_percentage) as avg_snaps, MIN(depth_order) as depth
             FROM depth_charts
@@ -75,7 +69,7 @@ class InjuryImpactAnalyzer:
             WHERE player_id = %s
             ORDER BY depth_order ASC
             LIMIT 1
-            """
+        """
         depth_result = self.db.execute_query(depth_query, (player_id,))
         
         if depth_result and depth_result[0]['depth']:
@@ -96,37 +90,38 @@ class InjuryImpactAnalyzer:
         return 0.3
     
     def calculate_injury_impact(self, player_id, position, injury_status):
-        """
-        Calculate impact score for a single injured player
-        Returns float representing impact (0-10 scale)
-        """
         position_weight = self.position_weights.get(position, 0.5)
-        
         severity = self.status_multipliers.get(injury_status, 0.5)
-        
         player_importance = self.get_player_importance(player_id)
-        
         impact = position_weight * severity * player_importance * 10
-        
         return round(impact, 2)
     
     def get_team_injury_impact(self, team_abbr, season=2025, week=None):
-        """
-        Calculate total injury impact for a team
-        Returns dict with total score and breakdown
-        """
-        query = """
-            SELECT i.*, p.name as player_name, ps.position, p.player_id
-            FROM injuries i
-            JOIN players p ON i.player_id = p.player_id
-            JOIN player_seasons ps ON p.player_id = ps.player_id AND i.season = ps.season
-            JOIN teams t ON ps.team_id = t.team_id
-            WHERE t.abbreviation = %s
-            AND i.season = %s
-            AND i.injury_status IN ('Out', 'Doubtful', 'Questionable', 'IR', 'PUP', 'NFI')
-        """
-        
-        injuries = self.db.execute_query(query, (team_abbr, season))
+        if week is None:
+            query = """
+                SELECT i.*, p.name as player_name, ps.position, p.player_id
+                FROM injuries i
+                JOIN players p ON i.player_id = p.player_id
+                JOIN player_seasons ps ON p.player_id = ps.player_id AND i.season = ps.season
+                JOIN teams t ON ps.team_id = t.team_id
+                WHERE t.abbreviation = %s
+                AND i.season = %s
+                AND i.injury_status IN ('Out', 'Doubtful', 'Questionable', 'IR', 'PUP', 'NFI')
+            """
+            injuries = self.db.execute_query(query, (team_abbr, season))
+        else:
+            query = """
+                SELECT i.*, p.name as player_name, ps.position, p.player_id
+                FROM injuries i
+                JOIN players p ON i.player_id = p.player_id
+                JOIN player_seasons ps ON p.player_id = ps.player_id AND i.season = ps.season
+                JOIN teams t ON ps.team_id = t.team_id
+                WHERE t.abbreviation = %s
+                AND i.season = %s
+                AND i.week = %s
+                AND i.injury_status IN ('Out', 'Doubtful', 'Questionable', 'IR', 'PUP', 'NFI')
+            """
+            injuries = self.db.execute_query(query, (team_abbr, season, week))
         
         if not injuries:
             return {
@@ -182,13 +177,9 @@ class InjuryImpactAnalyzer:
             'injuries': injury_details
         }
     
-    def compare_matchup_injuries(self, home_team, away_team, season=2025):
-        """
-        Compare injury impact between two teams for a matchup
-        Returns advantage analysis
-        """
-        home_impact = self.get_team_injury_impact(home_team, season)
-        away_impact = self.get_team_injury_impact(away_team, season)
+    def compare_matchup_injuries(self, home_team, away_team, season=2025, week=None):
+        home_impact = self.get_team_injury_impact(home_team, season, week)
+        away_impact = self.get_team_injury_impact(away_team, season, week)
         
         impact_diff = away_impact['total_impact'] - home_impact['total_impact']
         
@@ -200,7 +191,7 @@ class InjuryImpactAnalyzer:
         if home_impact['skipped_inactive'] > 0:
             print(f"  (Skipped {home_impact['skipped_inactive']} inactive/emergency players)")
         print("-"*70)
-        for inj in home_impact['injuries'][:10]:  # Top 10
+        for inj in home_impact['injuries'][:10]:
             critical = "⚠️ CRITICAL" if inj in home_impact['critical_injuries'] else ""
             print(f"  {inj['position']:5} {inj['player']:25} {inj['status']:20} "
                   f"Impact: {inj['impact_score']:.1f} {critical}")
@@ -209,7 +200,7 @@ class InjuryImpactAnalyzer:
         if away_impact['skipped_inactive'] > 0:
             print(f"  (Skipped {away_impact['skipped_inactive']} inactive/emergency players)")
         print("-"*70)
-        for inj in away_impact['injuries'][:10]:  # Top 10
+        for inj in away_impact['injuries'][:10]:
             critical = "⚠️ CRITICAL" if inj in away_impact['critical_injuries'] else ""
             print(f"  {inj['position']:5} {inj['player']:25} {inj['status']:20} "
                   f"Impact: {inj['impact_score']:.1f} {critical}")
@@ -240,7 +231,6 @@ class InjuryImpactAnalyzer:
         }
     
     def generate_weekly_injury_report(self, season=2025, week=6):
-        """Generate injury report for all teams"""
         print("="*70)
         print(f"NFL INJURY IMPACT REPORT - Week {week}, {season}")
         print("="*70)
@@ -251,7 +241,7 @@ class InjuryImpactAnalyzer:
         total_skipped = 0
         
         for team in teams:
-            impact = self.get_team_injury_impact(team['abbreviation'], season)
+            impact = self.get_team_injury_impact(team['abbreviation'], season, week)
             team_impacts.append(impact)
             total_skipped += impact.get('skipped_inactive', 0)
         
@@ -275,10 +265,9 @@ class InjuryImpactAnalyzer:
                 print(f"  • {inj['position']:5} {inj['player']:25} {inj['status']:15} "
                       f"(Impact: {inj['impact_score']:.1f})")
 
+
 if __name__ == "__main__":
     analyzer = InjuryImpactAnalyzer()
-    
     analyzer.generate_weekly_injury_report()
-    
     print("\n\n")
     analyzer.compare_matchup_injuries('DEN', 'NYJ')
