@@ -35,6 +35,8 @@ class InjuryImpactAnalyzer:
         self.status_multipliers = {
             'Out': 1.0,
             'IR': 1.0,
+            'Injured Reserve': 1.0,
+            'Reserve-Ret': 1.0,
             'Doubtful': 0.8,
             'Questionable': 0.4,
             'PUP': 0.9,
@@ -106,7 +108,7 @@ class InjuryImpactAnalyzer:
                 JOIN teams t ON ps.team_id = t.team_id
                 WHERE t.abbreviation = %s
                 AND i.season = %s
-                AND i.injury_status IN ('Out', 'Doubtful', 'Questionable', 'IR', 'PUP', 'NFI')
+                AND i.injury_status IN ('Out', 'Doubtful', 'Questionable', 'Injured Reserve', 'Reserve-Ret', 'IR', 'PUP', 'NFI')
             """
             injuries = self.db.execute_query(query, (team_abbr, season))
         else:
@@ -119,7 +121,7 @@ class InjuryImpactAnalyzer:
                 WHERE t.abbreviation = %s
                 AND i.season = %s
                 AND i.week = %s
-                AND i.injury_status IN ('Out', 'Doubtful', 'Questionable', 'IR', 'PUP', 'NFI')
+                AND i.injury_status IN ('Out', 'Doubtful', 'Questionable', 'Injured Reserve', 'Reserve-Ret', 'IR', 'PUP', 'NFI')
             """
             injuries = self.db.execute_query(query, (team_abbr, season, week))
         
@@ -128,6 +130,7 @@ class InjuryImpactAnalyzer:
                 'team': team_abbr,
                 'total_impact': 0,
                 'injury_count': 0,
+                'skipped_inactive': 0,
                 'critical_injuries': [],
                 'injuries': []
             }

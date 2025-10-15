@@ -83,8 +83,8 @@ def fetch_espn_injuries() -> List[Dict]:
                 
                 player_name = cols[0].text.strip()
                 position = cols[1].text.strip()
-                injury_status = cols[2].text.strip()
-                injury_description = cols[3].text.strip()
+                injury_description = cols[2].text.strip()
+                injury_status = cols[3].text.strip()
                 
                 injuries.append({
                     'player_name': player_name,
