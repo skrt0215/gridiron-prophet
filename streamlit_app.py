@@ -288,23 +288,27 @@ if 'recommendations' not in st.session_state:
 if 'current_season' not in st.session_state:
     st.session_state.current_season = 2025
 if 'current_week' not in st.session_state:
-    st.session_state.current_week = 6
+    st.session_state.current_week = 1
 
 tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["📊 THIS WEEK", "🏥 INJURIES", "⚔️ MATCHUP", "👥 ROSTERS", "📈 STATS", "❓ FAQ"])
 
 with tab1:
-    col1, col2 = st.columns([3, 1])
+    col1, col2, col3 = st.columns([2, 1, 1])
     
     with col1:
         st.markdown(f"<div class='section-header'>WEEK {st.session_state.current_week} PREDICTIONS</div>", unsafe_allow_html=True)
     
     with col2:
+        st.session_state.current_week = st.number_input("Week", min_value=1, max_value=18, value=st.session_state.current_week, key="week_selector")
+    
+    with col3:
         if st.button("🔄 REFRESH", use_container_width=True):
             st.session_state.predictions_loaded = False
             st.rerun()
     
     if not st.session_state.predictions_loaded:
-        with st.spinner("🔮 Loading predictions..."):
+        st.info(f"🔮 Auto-loading Week {st.session_state.current_week} predictions...")
+        with st.spinner("Training model and analyzing games..."):
             try:
                 predictor = MasterBettingPredictor()
                 predictor.train_ml_model()
@@ -411,62 +415,86 @@ with tab1:
         
         st.markdown("<br>", unsafe_allow_html=True)
         
+        st.markdown(f"### 🎯 {len(st.session_state.recommendations)} Betting Opportunities Found")
+        st.markdown("---")
+        
         for i, rec in enumerate(st.session_state.recommendations, 1):
             edge_abs = abs(rec['edge'])
             
             if edge_abs >= 10:
-                card_class = "bet-card bet-card-fire"
-                edge_class = "edge-fire"
                 edge_icon = "🔥"
+                edge_color = "#ef4444"
             elif edge_abs >= 5:
-                card_class = "bet-card bet-card-lightning"
-                edge_class = "edge-lightning"
                 edge_icon = "⚡"
+                edge_color = "#f59e0b"
             else:
-                card_class = "bet-card bet-card-warning"
-                edge_class = "edge-warning"
                 edge_icon = "⚠️"
+                edge_color = "#eab308"
             
             conf_pct = 95 if rec['confidence'] == 'HIGH' else 75 if rec['confidence'] == 'MEDIUM' else 55
             
-            st.markdown(f"""
-            <div class="{card_class}">
-                <div style="display: flex; justify-content: space-between; align-items: center;">
-                    <div class="game-title">{edge_icon} #{i} - {rec['game']}</div>
-                    <span class="edge-badge {edge_class}">Edge: {rec['edge']:+.1f} pts</span>
+            with st.container():
+                st.markdown(f"""
+                <div style="background: linear-gradient(135deg, #1e2742 0%, #252d47 100%); 
+                            border-left: 6px solid {edge_color}; 
+                            border-radius: 15px; 
+                            padding: 1.5rem; 
+                            margin-bottom: 1.5rem;
+                            box-shadow: 0 4px 15px rgba(0,0,0,0.3);">
                 </div>
+                """, unsafe_allow_html=True)
                 
-                <div class="bet-recommendation">🎯 BET: {rec['bet']}</div>
-                
-                <div class="confidence-bar">
-                    <div class="confidence-fill" style="width: {conf_pct}%;">
-                        {rec['confidence']} CONFIDENCE - {conf_pct}%
+                col_game, col_edge = st.columns([3, 1])
+                with col_game:
+                    st.markdown(f"## {edge_icon} #{i} - {rec['game']}")
+                with col_edge:
+                    st.markdown(f"""
+                    <div style="background: linear-gradient(135deg, {edge_color} 0%, {edge_color}dd 100%);
+                                padding: 0.5rem 1rem;
+                                border-radius: 20px;
+                                text-align: center;
+                                font-weight: 700;
+                                color: white;
+                                margin-top: 0.5rem;">
+                        Edge: {rec['edge']:+.1f} pts
                     </div>
+                    """, unsafe_allow_html=True)
+                
+                st.markdown(f"""
+                <div style="background: rgba(74, 222, 128, 0.15);
+                            padding: 1rem;
+                            border-radius: 12px;
+                            text-align: center;
+                            margin: 1rem 0;
+                            border: 2px solid rgba(74, 222, 128, 0.3);">
+                    <span style="font-size: 1.8rem; font-weight: 900; color: #4ade80;">
+                        🎯 BET: {rec['bet']}
+                    </span>
                 </div>
+                """, unsafe_allow_html=True)
                 
-                <div class="stats-grid">
-                    <div class="stat-item">
-                        <div class="stat-value">{rec['ml_prob']:.1%}</div>
-                        <div class="stat-label">Win Probability</div>
-                    </div>
-                    <div class="stat-item">
-                        <div class="stat-value">{rec['model_betting_line']:+.1f}</div>
-                        <div class="stat-label">Model Spread</div>
-                    </div>
-                    <div class="stat-item">
-                        <div class="stat-value">{rec['vegas_spread']:+.1f}</div>
-                        <div class="stat-label">Vegas Spread</div>
-                    </div>
-                    <div class="stat-item">
-                        <div class="stat-value">{edge_abs:.1f}</div>
-                        <div class="stat-label">Edge Value</div>
-                    </div>
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
+                st.progress(conf_pct / 100, text=f"{rec['confidence']} CONFIDENCE - {conf_pct}%")
+                
+                col1, col2, col3, col4 = st.columns(4)
+                
+                with col1:
+                    st.metric("Win Probability", f"{rec['ml_prob']:.1%}")
+                
+                with col2:
+                    st.metric("Model Spread", f"{rec['model_betting_line']:+.1f}")
+                
+                with col3:
+                    st.metric("Vegas Spread", f"{rec['vegas_spread']:+.1f}")
+                
+                with col4:
+                    st.metric("Edge Value", f"{edge_abs:.1f}")
+                
+                st.markdown("</div>", unsafe_allow_html=True)
     
     elif st.session_state.predictions_loaded:
-        st.info("⚠️ No strong betting opportunities found for this week. All edges < 3 points.")
+        st.warning(f"⚠️ No strong betting opportunities found for Week {st.session_state.current_week}")
+        st.info("💡 All games have edges < 3 points. Check back later or try a different week.")
+        st.markdown("**Tip:** Games with small edges aren't worth betting. Our model only recommends bets with significant value.")
 
 with tab2:
     st.markdown("<div class='section-header'>INJURY ANALYSIS</div>", unsafe_allow_html=True)
@@ -904,7 +932,7 @@ with tab6:
 st.markdown("---")
 st.markdown("""
 <div style="text-align: center; color: #94a3b8; padding: 1rem;">
-    <strong>Gridiron Prophet</strong> | Model Accuracy: 68.87% | Created by Kurt<br>
+    <strong>Gridiron Prophet</strong> | Model Accuracy: 74.17% | Created by Kurt<br>
     <span style="font-size: 0.85rem;">Bet responsibly. Past performance does not guarantee future results.</span>
 </div>
 """, unsafe_allow_html=True)
