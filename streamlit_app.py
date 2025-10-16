@@ -288,7 +288,7 @@ if 'recommendations' not in st.session_state:
 if 'current_season' not in st.session_state:
     st.session_state.current_season = 2025
 if 'current_week' not in st.session_state:
-    st.session_state.current_week = 1
+    st.session_state.current_week = 6
 
 tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["📊 THIS WEEK", "🏥 INJURIES", "⚔️ MATCHUP", "👥 ROSTERS", "📈 STATS", "❓ FAQ"])
 
@@ -305,6 +305,21 @@ with tab1:
         if st.button("🔄 REFRESH", use_container_width=True):
             st.session_state.predictions_loaded = False
             st.rerun()
+    
+    with st.expander("💡 Quick Reference - Reading Edge Values", expanded=False):
+        col1, col2 = st.columns(2)
+        with col1:
+            st.markdown("""
+            **Negative Edge (-)** 
+            - Model favors HOME team MORE than Vegas
+            - Example: Edge -8.2 = Home team undervalued
+            """)
+        with col2:
+            st.markdown("""
+            **Positive Edge (+)**
+            - Model favors AWAY team MORE than Vegas  
+            - Example: Edge +7.5 = Away team undervalued
+            """)
     
     if not st.session_state.predictions_loaded:
         st.info(f"🔮 Auto-loading Week {st.session_state.current_week} predictions...")
@@ -433,6 +448,12 @@ with tab1:
             
             conf_pct = 95 if rec['confidence'] == 'HIGH' else 75 if rec['confidence'] == 'MEDIUM' else 55
             
+            away_team = rec['game'].split(' @ ')[0]
+            home_team = rec['game'].split(' @ ')[1]
+            
+            away_logo = f"https://a.espncdn.com/i/teamlogos/nfl/500/{away_team}.png"
+            home_logo = f"https://a.espncdn.com/i/teamlogos/nfl/500/{home_team}.png"
+            
             with st.container():
                 st.markdown(f"""
                 <div style="background: linear-gradient(135deg, #1e2742 0%, #252d47 100%); 
@@ -444,9 +465,23 @@ with tab1:
                 </div>
                 """, unsafe_allow_html=True)
                 
-                col_game, col_edge = st.columns([3, 1])
+                col_rank, col_logos, col_game, col_edge = st.columns([0.5, 1.5, 3, 1.5])
+                
+                with col_rank:
+                    st.markdown(f"<div style='font-size: 2rem; font-weight: 900; color: white; padding-top: 0.5rem;'>{edge_icon} #{i}</div>", unsafe_allow_html=True)
+                
+                with col_logos:
+                    st.markdown(f"""
+                    <div style="display: flex; align-items: center; gap: 0.5rem; padding-top: 0.5rem;">
+                        <img src="{away_logo}" style="width: 40px; height: 40px; object-fit: contain;" onerror="this.style.display='none'">
+                        <span style="color: #94a3b8; font-size: 1.2rem; font-weight: 700;">@</span>
+                        <img src="{home_logo}" style="width: 40px; height: 40px; object-fit: contain;" onerror="this.style.display='none'">
+                    </div>
+                    """, unsafe_allow_html=True)
+                
                 with col_game:
-                    st.markdown(f"## {edge_icon} #{i} - {rec['game']}")
+                    st.markdown(f"<div style='font-size: 1.8rem; font-weight: 700; color: white; padding-top: 0.5rem;'>{rec['game']}</div>", unsafe_allow_html=True)
+                
                 with col_edge:
                     st.markdown(f"""
                     <div style="background: linear-gradient(135deg, {edge_color} 0%, {edge_color}dd 100%);
@@ -460,18 +495,43 @@ with tab1:
                     </div>
                     """, unsafe_allow_html=True)
                 
-                st.markdown(f"""
-                <div style="background: rgba(74, 222, 128, 0.15);
-                            padding: 1rem;
-                            border-radius: 12px;
-                            text-align: center;
-                            margin: 1rem 0;
-                            border: 2px solid rgba(74, 222, 128, 0.3);">
-                    <span style="font-size: 1.8rem; font-weight: 900; color: #4ade80;">
-                        🎯 BET: {rec['bet']}
-                    </span>
-                </div>
-                """, unsafe_allow_html=True)
+                col_bet, col_copy = st.columns([4, 1])
+                
+                with col_bet:
+                    st.markdown(f"""
+                    <div style="background: rgba(74, 222, 128, 0.15);
+                                padding: 1rem;
+                                border-radius: 12px;
+                                text-align: center;
+                                margin: 1rem 0;
+                                border: 2px solid rgba(74, 222, 128, 0.3);">
+                        <span style="font-size: 1.8rem; font-weight: 900; color: #4ade80;">
+                            🎯 BET: {rec['bet']}
+                        </span>
+                    </div>
+                    """, unsafe_allow_html=True)
+                
+                with col_copy:
+                    st.markdown(f"""
+                    <button onclick="navigator.clipboard.writeText('{rec['bet']}').then(() => {{
+                        this.innerHTML = '✅ Copied!';
+                        setTimeout(() => {{ this.innerHTML = '📋 Copy'; }}, 2000);
+                    }})" 
+                    style="background: linear-gradient(135deg, #0B2265 0%, #1a3a8a 100%);
+                           color: white;
+                           border: none;
+                           padding: 0.8rem 1.5rem;
+                           border-radius: 10px;
+                           font-weight: 700;
+                           cursor: pointer;
+                           width: 100%;
+                           margin-top: 1rem;
+                           font-size: 1rem;
+                           transition: all 0.3s;
+                           box-shadow: 0 4px 10px rgba(11, 34, 101, 0.3);">
+                        📋 Copy
+                    </button>
+                    """, unsafe_allow_html=True)
                 
                 st.progress(conf_pct / 100, text=f"{rec['confidence']} CONFIDENCE - {conf_pct}%")
                 
@@ -487,7 +547,7 @@ with tab1:
                     st.metric("Vegas Spread", f"{rec['vegas_spread']:+.1f}")
                 
                 with col4:
-                    st.metric("Edge Value", f"{edge_abs:.1f}")
+                    st.metric("Edge Value", f"{rec['edge']:+.1f} pts")
                 
                 st.markdown("</div>", unsafe_allow_html=True)
     
@@ -932,7 +992,7 @@ with tab6:
 st.markdown("---")
 st.markdown("""
 <div style="text-align: center; color: #94a3b8; padding: 1rem;">
-    <strong>Gridiron Prophet</strong> | Model Accuracy: 74.17% | Created by Kurt<br>
+    <strong>Gridiron Prophet</strong> | Model Accuracy: 68.87% | Created by Kurt<br>
     <span style="font-size: 0.85rem;">Bet responsibly. Past performance does not guarantee future results.</span>
 </div>
 """, unsafe_allow_html=True)
