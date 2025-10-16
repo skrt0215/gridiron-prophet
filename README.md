@@ -3,9 +3,8 @@
 Gridiron Prophet is a program that has been trained to analyze, process, and predict the scores of past, present, and future games for the NFL. It has been trained with a sample size spanning four seasons (755+ games!), injury reports, player trends, and MUCH MORE to give you the most accurate recommendation while also deciding on which side of the ball to bet on based on Vegas odds. 
 
 ## Usage
-- The first iteration if the streamlit version for this applcation has been developed and is currently undergoing optimization to ensure the best experience utilizing the application.
-- It will be using ngrok for port forwarding and enabling numerous users to access the site to use its features and log their own picks.
-- Upon full completion of accurate training and rosters across the league, this program will be able to enter the test phases with numerous users.
+- The finalized product is currently being prepared for deployment, with NUMEROUS updates to not only enhance the 
+user experience, but to also improve betting line prediction accuracy!
 
 ## Features
 - Predictive models for game outcomes
@@ -14,12 +13,13 @@ Gridiron Prophet is a program that has been trained to analyze, process, and pre
 - Confidence level in bets
 - Live training weekly after games are had
 - Head to head! Choose two teams to face off for the bot to make a determination based off of its own thought process!
+- Weekly analytics chart to view model accuracy and trends
 
 ## Tech Stack
 - Python 3.11+ (REQUIRED)
 - Pandas, NumPy (Data Analysis)
 - Scikit-learn (Machine Learning)
-- Streamlit, ngrok (Visualization)
+- Streamlit, ngrok (Visualization & Deployment)
 - MySQL (Data Entry and Storage)
 
 ## Roadmap
