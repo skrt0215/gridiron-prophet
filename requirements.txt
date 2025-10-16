@@ -20,9 +20,9 @@ jsonschema-specifications==2025.9.1
 MarkupSafe==3.0.3
 narwhals==2.7.0
 nfl_data_py==0.3.3
-numpy==1.26.4
+numpy==2.0.0
 packaging==25.0
-pandas==1.5.3
+pandas==2.0.0
 pillow==11.3.0
 plotly==6.3.1
 protobuf==6.32.1
@@ -36,7 +36,7 @@ referencing==0.36.2
 requests==2.32.5
 rpds-py==0.27.1
 scikit-learn==1.6.1
-scipy
+scipy==1.14.0
 six==1.17.0
 smmap==5.0.2
 soupsieve==2.8
