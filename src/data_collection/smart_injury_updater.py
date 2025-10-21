@@ -65,43 +65,49 @@ def fetch_espn_injuries() -> List[Dict]:
         soup = BeautifulSoup(response.text, 'html.parser')
         injuries = []
         
-        injury_tables = soup.find_all('div', class_='ResponsiveTable')
+        team_sections = soup.find_all('div', class_='Wrapper')
         
-        for table in injury_tables:
-            team_header = table.find_previous('div', class_='Table__Title')
+        for section in team_sections:
+            team_header = section.find('div', class_='Table__Title')
+            
             if not team_header:
                 continue
-                
+            
             team_name = team_header.text.strip()
             
-            rows = table.find_all('tr')[1:]
+            injury_tables = section.find_all('div', class_='ResponsiveTable')
             
-            for row in rows:
-                cols = row.find_all('td')
-                if len(cols) < 4:
-                    continue
+            for table in injury_tables:
+                rows = table.find_all('tr')[1:]
                 
-                player_name = cols[0].text.strip()
-                position = cols[1].text.strip()
-                injury_description = cols[2].text.strip()
-                injury_status = cols[3].text.strip()
-                
-                injuries.append({
-                    'player_name': player_name,
-                    'team': team_name,
-                    'position': position,
-                    'injury_status': injury_status,
-                    'injury_description': injury_description,
-                    'date_reported': datetime.now().strftime('%Y-%m-%d'),
-                    'season': 2025,
-                    'week': get_current_week()
-                })
+                for row in rows:
+                    cols = row.find_all('td')
+                    if len(cols) < 4:
+                        continue
+                    
+                    player_name = cols[0].text.strip()
+                    position = cols[1].text.strip()
+                    injury_description = cols[2].text.strip()
+                    injury_status = cols[3].text.strip()
+                    
+                    injuries.append({
+                        'player_name': player_name,
+                        'team': team_name,
+                        'position': position,
+                        'injury_status': injury_status,
+                        'injury_description': injury_description,
+                        'date_reported': datetime.now().strftime('%Y-%m-%d'),
+                        'season': 2025,
+                        'week': get_current_week()
+                    })
         
-        print(f"✅ Found {len(injuries)} injuries")
+        print(f"✅ Found {len(injuries)} injuries across all teams")
         return injuries
         
     except Exception as e:
         print(f"❌ Error fetching injuries: {e}")
+        import traceback
+        traceback.print_exc()
         return []
 
 
