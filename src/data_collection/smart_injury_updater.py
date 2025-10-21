@@ -51,6 +51,15 @@ def get_current_week() -> int:
     return 1
 
 
+def normalize_player_name(name):
+    name = name.replace(' Jr.', '').replace(' Sr.', '')
+    name = name.replace(' II', '').replace(' III', '').replace(' IV', '')
+    parts = name.split()
+    if len(parts) == 3 and len(parts[1]) <= 2:
+        name = f"{parts[0]} {parts[2]}"
+    return name.strip().lower()
+
+
 def fetch_espn_injuries() -> List[Dict]:
     print(f"🔍 Fetching injuries from ESPN...")
     
@@ -65,20 +74,23 @@ def fetch_espn_injuries() -> List[Dict]:
         soup = BeautifulSoup(response.text, 'html.parser')
         injuries = []
         
-        team_sections = soup.find_all('div', class_='Wrapper')
+        main_wrapper = soup.find('div', class_='Wrapper')
+        if not main_wrapper:
+            print("❌ Could not find main Wrapper on ESPN page")
+            return []
         
-        for section in team_sections:
-            team_header = section.find('div', class_='Table__Title')
+        all_elements = main_wrapper.find_all(['div'], class_=['Table__Title', 'ResponsiveTable'])
+        
+        current_team = None
+        team_count = 0
+        
+        for element in all_elements:
+            if 'Table__Title' in element.get('class', []):
+                current_team = element.text.strip()
+                team_count += 1
             
-            if not team_header:
-                continue
-            
-            team_name = team_header.text.strip()
-            
-            injury_tables = section.find_all('div', class_='ResponsiveTable')
-            
-            for table in injury_tables:
-                rows = table.find_all('tr')[1:]
+            elif 'ResponsiveTable' in element.get('class', []) and current_team:
+                rows = element.find_all('tr')[1:]
                 
                 for row in rows:
                     cols = row.find_all('td')
@@ -92,7 +104,7 @@ def fetch_espn_injuries() -> List[Dict]:
                     
                     injuries.append({
                         'player_name': player_name,
-                        'team': team_name,
+                        'team': current_team,
                         'position': position,
                         'injury_status': injury_status,
                         'injury_description': injury_description,
@@ -101,6 +113,7 @@ def fetch_espn_injuries() -> List[Dict]:
                         'week': get_current_week()
                     })
         
+        print(f"✓ Processed {team_count} teams")
         print(f"✅ Found {len(injuries)} injuries across all teams")
         return injuries
         
@@ -111,15 +124,40 @@ def fetch_espn_injuries() -> List[Dict]:
         return []
 
 
+def find_player_id(db, player_name, team_id, player_cache):
+    normalized_name = normalize_player_name(player_name)
+    
+    cache_key = f"{normalized_name}_{team_id}"
+    if cache_key in player_cache:
+        return player_cache[cache_key]
+    
+    result = db.execute_query("""
+        SELECT p.player_id
+        FROM players p
+        JOIN player_seasons ps ON p.player_id = ps.player_id
+        WHERE LOWER(p.name) = %s 
+        AND ps.team_id = %s 
+        AND ps.season = 2025
+        LIMIT 1
+    """, (normalized_name, team_id))
+    
+    player_id = result[0]['player_id'] if result else None
+    player_cache[cache_key] = player_id
+    
+    return player_id
+
+
 def update_injuries_smart(db: DatabaseManager, injuries: List[Dict]) -> Dict[str, int]:
     stats = {
         'new': 0,
         'updated': 0,
         'unchanged': 0,
-        'resolved': 0
+        'resolved': 0,
+        'not_found': 0
     }
     
     current_week = get_current_week()
+    player_cache = {}
     
     existing = db.execute_query("""
         SELECT 
@@ -150,6 +188,20 @@ def update_injuries_smart(db: DatabaseManager, injuries: List[Dict]) -> Dict[str
     
     for injury in injuries:
         team_abbrev = get_team_abbreviation(injury['team'])
+        
+        team_data = db.get_team_by_abbreviation(team_abbrev)
+        if not team_data:
+            stats['not_found'] += 1
+            continue
+        
+        team_id = team_data['team_id']
+        
+        player_id = find_player_id(db, injury['player_name'], team_id, player_cache)
+        
+        if not player_id:
+            stats['not_found'] += 1
+            continue
+        
         player_key = (injury['player_name'], team_abbrev)
         fetched_players.add(player_key)
         
@@ -180,21 +232,6 @@ def update_injuries_smart(db: DatabaseManager, injuries: List[Dict]) -> Dict[str
             else:
                 stats['unchanged'] += 1
         else:
-            team_data = db.get_team_by_abbreviation(team_abbrev)
-            if not team_data:
-                print(f"⚠️  Unknown team: {team_abbrev} for {injury['player_name']}")
-                continue
-            
-            team_id = team_data['team_id']
-            
-            player_id = db.get_or_create_player(
-                name=injury['player_name'],
-                position=injury['position']
-            )
-            
-            if isinstance(player_id, dict):
-                player_id = player_id['player_id']
-            
             try:
                 existing_ps = db.execute_query("""
                     SELECT player_id FROM player_seasons
@@ -284,6 +321,7 @@ def main():
         print(f"  🔄 Updated: {stats['updated']}")
         print(f"  ➖ Unchanged: {stats['unchanged']}")
         print(f"  ✅ Resolved: {stats['resolved']}")
+        print(f"  ⚠️  Not Found in Roster: {stats['not_found']}")
         print("-"*60)
         
     except Exception as e:
