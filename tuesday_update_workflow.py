@@ -112,7 +112,7 @@ def main():
     current_week = get_current_nfl_week()
     print(f"📊 Current NFL Week: {current_week}")
     
-    total_steps = 5
+    total_steps = 6
     completed_steps = 0
     failed_steps = []
     
@@ -128,7 +128,35 @@ def main():
     
     time.sleep(2)
     
-    print_step(2, total_steps, "Update Injuries (ESPN Scraper)")
+    print_step(2, total_steps, "Calculate Previous Week Accuracy")
+    previous_week = current_week - 1
+    if previous_week > 0:
+        print(f"\n📊 Calculating accuracy for completed Week {previous_week}...")
+        try:
+            result = subprocess.run(
+                [sys.executable, str(src_dir / 'analysis' / 'calculate_weekly_accuracy.py'),
+                 '--season', '2025', '--week', str(previous_week)],
+                capture_output=False,
+                text=True,
+                cwd=project_root
+            )
+            
+            if result.returncode == 0:
+                print(f"✅ Week {previous_week} accuracy calculated and stored")
+                completed_steps += 1
+            else:
+                print(f"⚠️  Could not calculate Week {previous_week} accuracy (games may not be complete)")
+                failed_steps.append("Accuracy Calculation (non-critical)")
+        except Exception as e:
+            print(f"⚠️  Accuracy calculation skipped: {e}")
+            failed_steps.append("Accuracy Calculation (non-critical)")
+    else:
+        print("\n⏭️  Skipping accuracy calculation (no previous week)")
+        completed_steps += 1
+    
+    time.sleep(2)
+    
+    print_step(3, total_steps, "Update Injuries (ESPN Scraper)")
     if run_script(data_collection_dir / 'smart_injury_updater.py', "Injury Data"):
         completed_steps += 1
     else:
@@ -166,7 +194,7 @@ def main():
     
     time.sleep(2)
     
-    print_step(5, total_steps, "Generate Predictions (Master Betting Predictor)")
+    print_step(6, total_steps, "Generate Predictions (Master Betting Predictor)")
     if run_script(models_dir / 'master_betting_predictor.py', "Predictions"):
         completed_steps += 1
     else:
