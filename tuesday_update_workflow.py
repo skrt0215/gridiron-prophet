@@ -26,16 +26,13 @@ def run_script(script_path: Path, description: str) -> bool:
         print(f"▶️  Running {script_path.name}...")
         result = subprocess.run(
             [sys.executable, str(script_path)],
-            capture_output=True,
+            capture_output=False,
             text=True,
             cwd=project_root
         )
         
-        print(result.stdout)
-        
         if result.returncode != 0:
-            print(f"❌ Error in {description}:")
-            print(result.stderr)
+            print(f"❌ Error in {description}")
             return False
         
         print(f"✅ {description} completed successfully")
@@ -67,33 +64,40 @@ def verify_data_quality(db: DatabaseManager, current_week: int) -> dict:
     print("\n🔍 Verifying data quality...")
     
     games_result = db.execute_query("""
-        SELECT COUNT(*) 
+        SELECT COUNT(*) as count
         FROM games 
         WHERE season = 2025 
         AND week = %s
         AND home_score IS NOT NULL
     """, (current_week - 1,))
-    games_count = games_result[0][0] if games_result else 0
+    games_count = games_result[0]['count'] if games_result else 0
     
     injuries_result = db.execute_query("""
-        SELECT COUNT(*) 
+        SELECT COUNT(*) as count
         FROM injuries 
         WHERE season = 2025 
         AND week = %s
     """, (current_week,))
-    injuries_count = injuries_result[0][0] if injuries_result else 0
+    injuries_count = injuries_result[0]['count'] if injuries_result else 0
     
-    snap_counts = 0
+    upcoming_result = db.execute_query("""
+        SELECT COUNT(*) as count
+        FROM games 
+        WHERE season = 2025 
+        AND week = %s
+    """, (current_week,))
+    upcoming_count = upcoming_result[0]['count'] if upcoming_result else 0
     
     quality = {
-        'games': games_count,
+        'games_completed': games_count,
         'injuries': injuries_count,
-        'snap_counts': snap_counts,
+        'upcoming_games': upcoming_count,
         'week': current_week
     }
     
-    print(f"  ✓ Games from Week {current_week - 1}: {games_count}")
-    print(f"  ✓ Injuries for Week {current_week}: {injuries_count}")
+    print(f"  ✓ Completed games (Week {current_week - 1}): {games_count}")
+    print(f"  ✓ Current injuries (Week {current_week}): {injuries_count}")
+    print(f"  ✓ Upcoming games (Week {current_week}): {upcoming_count}")
     
     return quality
 
@@ -101,71 +105,69 @@ def verify_data_quality(db: DatabaseManager, current_week: int) -> dict:
 def main():
     start_time = datetime.now()
     
-    print_header("🏈 TUESDAY NFL UPDATE WORKFLOW 🏈")
+    print_header("🏈 GRIDIRON PROPHET - WEEKLY UPDATE 🏈")
     print(f"📅 Date: {start_time.strftime('%A, %B %d, %Y')}")
     print(f"⏰ Started: {start_time.strftime('%I:%M %p')}")
     
     current_week = get_current_nfl_week()
     print(f"📊 Current NFL Week: {current_week}")
     
-    total_steps = 6
+    total_steps = 5
     completed_steps = 0
     failed_steps = []
     
     src_dir = project_root / 'src'
     data_collection_dir = src_dir / 'data_collection'
     models_dir = src_dir / 'models'
-    analysis_dir = src_dir / 'analysis'
     
-    print_step(1, total_steps, "Fetch Latest Game Results")
-    if run_script(data_collection_dir / 'fetch_games.py', "Game Results Fetch"):
+    print_step(1, total_steps, "Update Game Results")
+    if run_script(data_collection_dir / 'fetch_games.py', "Game Results"):
         completed_steps += 1
     else:
         failed_steps.append("Game Results")
     
     time.sleep(2)
     
-    print_step(2, total_steps, "Smart Injury Update (Week-Aware)")
-    if run_script(data_collection_dir / 'smart_injury_updater.py', "Injury Update"):
+    print_step(2, total_steps, "Update Injuries (ESPN Scraper)")
+    if run_script(data_collection_dir / 'smart_injury_updater.py', "Injury Data"):
         completed_steps += 1
     else:
-        failed_steps.append("Injuries")
+        failed_steps.append("Injury Data")
     
     time.sleep(2)
     
-    print_step(3, total_steps, "Fetch Latest Betting Lines")
-    if run_script(data_collection_dir / 'fetch_betting_lines.py', "Betting Lines Fetch"):
+    print_step(3, total_steps, "Fetch Betting Lines (DraftKings)")
+    if run_script(data_collection_dir / 'fetch_betting_lines.py', "Betting Lines"):
         completed_steps += 1
     else:
-        failed_steps.append("Betting Lines")
+        print("⚠️  Betting lines failed - continuing without them")
+        failed_steps.append("Betting Lines (non-critical)")
     
     time.sleep(2)
     
-    print_step(5, total_steps, "Verify Data Quality")
+    print_step(4, total_steps, "Verify Data Quality")
     db = DatabaseManager()
     try:
         quality = verify_data_quality(db, current_week)
         
-        if quality['games'] > 0 and quality['injuries'] >= 0:
+        if quality['injuries'] > 0 and quality['upcoming_games'] > 0:
             print("✅ Data quality check passed")
             completed_steps += 1
         else:
-            print("⚠️  Warning: Some data may be incomplete")
+            print("⚠️  Warning: Data may be incomplete")
+            if quality['injuries'] == 0:
+                print("    - No injury data found")
+            if quality['upcoming_games'] == 0:
+                print("    - No upcoming games found")
             failed_steps.append("Data Quality")
     except Exception as e:
         print(f"❌ Error during verification: {e}")
         failed_steps.append("Data Quality")
     
-    print_step(6, total_steps, "Retrain Enhanced Model")
-    if run_script(models_dir / 'enhanced_model_with_injuries.py', "Model Training"):
-        completed_steps += 1
-    else:
-        failed_steps.append("Model Training")
-    
     time.sleep(2)
     
-    print_step(7, total_steps, "Generate Week Predictions")
-    if run_script(models_dir / 'master_betting_predictor.py', "Predictions Generation"):
+    print_step(5, total_steps, "Generate Predictions (Master Betting Predictor)")
+    if run_script(models_dir / 'master_betting_predictor.py', "Predictions"):
         completed_steps += 1
     else:
         failed_steps.append("Predictions")
@@ -179,22 +181,29 @@ def main():
     print(f"✅ Successful Steps: {completed_steps}/{total_steps}")
     
     if failed_steps:
-        print(f"❌ Failed Steps: {', '.join(failed_steps)}")
-        print("\n⚠️  WORKFLOW COMPLETED WITH ERRORS")
+        print(f"\n⚠️  Issues: {', '.join(failed_steps)}")
+        if 'Predictions' in ' '.join(failed_steps):
+            print("\n❌ WORKFLOW FAILED - Predictions not generated")
+        else:
+            print("\n⚠️  WORKFLOW COMPLETED WITH WARNINGS")
     else:
         print("\n🎉 ALL STEPS COMPLETED SUCCESSFULLY!")
     
     print("\n📋 NEXT STEPS:")
-    print("  1. Review predictions in reports/weekly_predictions.txt")
-    print("  2. Check injury impact analysis")
-    print("  3. Compare with Vegas lines using odds_comparator.py")
-    print("  4. Track ROI with roi_tracker.py")
-    print("\n💡 NOTE: Snap counts tracking not yet implemented")
-    print("    - Using default 65% snap percentage for injury impact")
-    print("    - Add snap_counts table later for enhanced accuracy")
+    print("  1. Launch Streamlit dashboard:")
+    print("     streamlit run streamlit_app.py")
+    print("  2. Review predictions in the dashboard")
+    print("  3. Check injury impacts for key matchups")
+    print(f"  4. Look for betting opportunities with ≥5pt edge")
+    
+    print("\n💡 OPTIONAL:")
+    print("  - Update rosters (only if major trades occurred):")
+    print("    python src/data_collection/init_rosters_2025.py")
+    print("  - Track ROI after games complete:")
+    print("    python src/betting/roi_tracker.py")
     
     print("\n" + "="*70)
-    print("✨ Tuesday Update Complete! Good luck this week! ✨")
+    print("✨ Weekly Update Complete! Good luck this week! ✨")
     print("="*70 + "\n")
 
 
