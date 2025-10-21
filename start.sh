@@ -1,4 +1,4 @@
-#One step process for opening the streamlit visual for the program because I am tired of running terminal commands
+#!/bin/bash
 
 echo "🏈 Starting Gridiron Prophet..."
 echo "================================"
@@ -23,7 +23,9 @@ echo "Activating virtual environment..."
 source venv/bin/activate
 
 echo "📦 Checking dependencies..."
-pip install -q streamlit pandas numpy scikit-learn requests pymysql cryptography python-dotenv beautifulsoup4 nfl-data-py lxml html5lib pyngrok 2>/dev/nullecho "✅ Dependencies ready!"
+pip install -q streamlit pandas numpy scikit-learn scipy requests pymysql python-dotenv beautifulsoup4 plotly 2>/dev/null
+
+echo "✅ Dependencies ready!"
 
 echo "Checking for existing processes on port 8501..."
 lsof -ti:8501 | xargs kill -9 2>/dev/null
@@ -57,4 +59,7 @@ echo "🔐 Password: Cheesetouch123!"
 echo ""
 echo "Press Ctrl+C to stop everything"
 echo "================================"
+
+trap "kill $STREAMLIT_PID $NGROK_PID 2>/dev/null" EXIT
+
 wait $STREAMLIT_PID $NGROK_PID

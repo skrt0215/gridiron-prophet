@@ -571,72 +571,79 @@ with tab2:
     with col2:
         if st.button("📋 GET INJURY REPORT", use_container_width=True):
             with st.spinner(f"Analyzing {selected_team} injuries..."):
-                impact = analyzer.get_team_injury_impact(selected_team, st.session_state.current_season, st.session_state.current_week)
-                
-                col1, col2, col3 = st.columns(3)
-                
-                with col1:
-                    st.markdown(f"""
-                    <div class="metric-card">
-                        <div class="metric-value">{impact['total_impact']:.1f}</div>
-                        <div class="metric-label">Total Impact Score</div>
-                    </div>
-                    """, unsafe_allow_html=True)
-                
-                with col2:
-                    st.markdown(f"""
-                    <div class="metric-card">
-                        <div class="metric-value">{impact['injury_count']}</div>
-                        <div class="metric-label">Total Injuries</div>
-                    </div>
-                    """, unsafe_allow_html=True)
-                
-                with col3:
-                    st.markdown(f"""
-                    <div class="metric-card">
-                        <div class="metric-value">{len(impact['critical_injuries'])}</div>
-                        <div class="metric-label">Critical Injuries</div>
-                    </div>
-                    """, unsafe_allow_html=True)
-                
-                st.markdown("<br>", unsafe_allow_html=True)
-                
-                if impact['injuries']:
-                    critical_injuries = [inj for inj in impact['injuries'] if inj['impact_score'] >= 7.0]
-                    moderate_injuries = [inj for inj in impact['injuries'] if 3.0 <= inj['impact_score'] < 7.0]
-                    minor_injuries = [inj for inj in impact['injuries'] if inj['impact_score'] < 3.0]
+                try:
+                    impact = analyzer.get_team_injury_impact(selected_team, st.session_state.current_season, st.session_state.current_week)
                     
-                    if critical_injuries:
-                        with st.expander(f"🔴 CRITICAL INJURIES ({len(critical_injuries)})", expanded=True):
-                            for inj in critical_injuries:
-                                st.markdown(f"""
-                                <div class="injury-critical">
-                                    <strong>{inj['player']}</strong> - {inj['position']}<br>
-                                    Status: {inj['status']} | Impact: {inj['impact_score']:.1f}
-                                </div>
-                                """, unsafe_allow_html=True)
-                    
-                    if moderate_injuries:
-                        with st.expander(f"🟡 MODERATE INJURIES ({len(moderate_injuries)})", expanded=False):
-                            for inj in moderate_injuries:
-                                st.markdown(f"""
-                                <div class="injury-moderate">
-                                    <strong>{inj['player']}</strong> - {inj['position']}<br>
-                                    Status: {inj['status']} | Impact: {inj['impact_score']:.1f}
-                                </div>
-                                """, unsafe_allow_html=True)
-                    
-                    if minor_injuries:
-                        with st.expander(f"🟢 MINOR INJURIES ({len(minor_injuries)})", expanded=False):
-                            for inj in minor_injuries:
-                                st.markdown(f"""
-                                <div class="injury-minor">
-                                    <strong>{inj['player']}</strong> - {inj['position']}<br>
-                                    Status: {inj['status']} | Impact: {inj['impact_score']:.1f}
-                                </div>
-                                """, unsafe_allow_html=True)
-                else:
-                    st.success(f"✅ {selected_team} has no significant injuries!")
+                    if not impact:
+                        st.error("Unable to load injury data")
+                    else:
+                        col1, col2, col3 = st.columns(3)
+                        
+                        with col1:
+                            st.markdown(f"""
+                            <div class="metric-card">
+                                <div class="metric-value">{impact['total_impact']:.1f}</div>
+                                <div class="metric-label">Total Impact Score</div>
+                            </div>
+                            """, unsafe_allow_html=True)
+                        
+                        with col2:
+                            st.markdown(f"""
+                            <div class="metric-card">
+                                <div class="metric-value">{impact['injury_count']}</div>
+                                <div class="metric-label">Total Injuries</div>
+                            </div>
+                            """, unsafe_allow_html=True)
+                        
+                        with col3:
+                            st.markdown(f"""
+                            <div class="metric-card">
+                                <div class="metric-value">{len(impact['critical_injuries'])}</div>
+                                <div class="metric-label">Critical Injuries</div>
+                            </div>
+                            """, unsafe_allow_html=True)
+                        
+                        st.markdown("<br>", unsafe_allow_html=True)
+                        
+                        if impact.get('injuries'):
+                            critical_injuries = [inj for inj in impact['injuries'] if inj['impact_score'] >= 7.0]
+                            moderate_injuries = [inj for inj in impact['injuries'] if 3.0 <= inj['impact_score'] < 7.0]
+                            minor_injuries = [inj for inj in impact['injuries'] if inj['impact_score'] < 3.0]
+                            
+                            if critical_injuries:
+                                with st.expander(f"🔴 CRITICAL INJURIES ({len(critical_injuries)})", expanded=True):
+                                    for inj in critical_injuries:
+                                        st.markdown(f"""
+                                        <div class="injury-critical">
+                                            <strong>{inj['player']}</strong> - {inj['position']}<br>
+                                            Status: {inj['status']} | Impact: {inj['impact_score']:.1f}
+                                        </div>
+                                        """, unsafe_allow_html=True)
+                            
+                            if moderate_injuries:
+                                with st.expander(f"🟡 MODERATE INJURIES ({len(moderate_injuries)})", expanded=False):
+                                    for inj in moderate_injuries:
+                                        st.markdown(f"""
+                                        <div class="injury-moderate">
+                                            <strong>{inj['player']}</strong> - {inj['position']}<br>
+                                            Status: {inj['status']} | Impact: {inj['impact_score']:.1f}
+                                        </div>
+                                        """, unsafe_allow_html=True)
+                            
+                            if minor_injuries:
+                                with st.expander(f"🟢 MINOR INJURIES ({len(minor_injuries)})", expanded=False):
+                                    for inj in minor_injuries:
+                                        st.markdown(f"""
+                                        <div class="injury-minor">
+                                            <strong>{inj['player']}</strong> - {inj['position']}<br>
+                                            Status: {inj['status']} | Impact: {inj['impact_score']:.1f}
+                                        </div>
+                                        """, unsafe_allow_html=True)
+                        else:
+                            st.success(f"✅ {selected_team} has no significant injuries!")
+                
+                except Exception as e:
+                    st.error(f"Error loading injury data: {str(e)}")
 
 with tab3:
     st.markdown("<div class='section-header'>HEAD-TO-HEAD MATCHUP</div>", unsafe_allow_html=True)

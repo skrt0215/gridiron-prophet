@@ -1,5 +1,6 @@
 import sys
 import os
+from datetime import datetime
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from database.db_manager import DatabaseManager
@@ -8,7 +9,7 @@ class InjuryImpactAnalyzer:
     
     def __init__(self):
         self.db = DatabaseManager()
-        self.MIN_SNAP_THRESHOLD = 0.15
+        self.MIN_SNAP_THRESHOLD = 0.0
         
         self.position_weights = {
             'QB': 1.0,
@@ -42,6 +43,13 @@ class InjuryImpactAnalyzer:
             'PUP': 0.9,
             'NFI': 0.9,
         }
+    
+    def get_current_nfl_week(self):
+        season_start = datetime(2025, 9, 4)
+        now = datetime.now()
+        days_elapsed = (now - season_start).days
+        week = min((days_elapsed // 7) + 1, 18)
+        return max(1, week)
     
     def get_player_importance(self, player_id):
         query = """
@@ -100,30 +108,25 @@ class InjuryImpactAnalyzer:
     
     def get_team_injury_impact(self, team_abbr, season=2025, week=None):
         if week is None:
-            query = """
-                SELECT i.*, p.name as player_name, ps.position, p.player_id
-                FROM injuries i
-                JOIN players p ON i.player_id = p.player_id
-                JOIN player_seasons ps ON p.player_id = ps.player_id AND i.season = ps.season
-                JOIN teams t ON ps.team_id = t.team_id
-                WHERE t.abbreviation = %s
-                AND i.season = %s
-                AND i.injury_status IN ('Out', 'Doubtful', 'Questionable', 'Injured Reserve', 'Reserve-Ret', 'IR', 'PUP', 'NFI')
-            """
-            injuries = self.db.execute_query(query, (team_abbr, season))
-        else:
-            query = """
-                SELECT i.*, p.name as player_name, ps.position, p.player_id
-                FROM injuries i
-                JOIN players p ON i.player_id = p.player_id
-                JOIN player_seasons ps ON p.player_id = ps.player_id AND i.season = ps.season
-                JOIN teams t ON ps.team_id = t.team_id
-                WHERE t.abbreviation = %s
-                AND i.season = %s
-                AND i.week = %s
-                AND i.injury_status IN ('Out', 'Doubtful', 'Questionable', 'Injured Reserve', 'Reserve-Ret', 'IR', 'PUP', 'NFI')
-            """
-            injuries = self.db.execute_query(query, (team_abbr, season, week))
+            week = self.get_current_nfl_week()
+            
+        query = """
+            SELECT i.*, p.name as player_name, ps.position, p.player_id
+            FROM injuries i
+            JOIN players p ON i.player_id = p.player_id
+            JOIN player_seasons ps ON p.player_id = ps.player_id AND i.season = ps.season
+            JOIN teams t ON ps.team_id = t.team_id
+            INNER JOIN (
+                SELECT player_id, MAX(week) as max_week
+                FROM injuries
+                WHERE season = %s AND week <= %s
+                GROUP BY player_id
+            ) latest ON i.player_id = latest.player_id AND i.week = latest.max_week
+            WHERE t.abbreviation = %s
+            AND i.season = %s
+            AND i.injury_status IN ('Out', 'Doubtful', 'Questionable', 'Injured Reserve', 'Reserve-Ret', 'IR', 'PUP', 'NFI')
+        """
+        injuries = self.db.execute_query(query, (season, week, team_abbr, season))
         
         if not injuries:
             return {
@@ -135,105 +138,106 @@ class InjuryImpactAnalyzer:
                 'injuries': []
             }
         
+        processed_injuries = []
         total_impact = 0
-        critical_injuries = []
-        injury_details = []
         skipped_count = 0
+        critical_injuries = []
         
         for injury in injuries:
-            player_importance = self.get_player_importance(injury['player_id'])
-
-            if player_importance < self.MIN_SNAP_THRESHOLD:
+            player_id = injury['player_id']
+            position = injury['position']
+            status = injury['injury_status']
+            player_name = injury['player_name']
+            
+            snap_query = """
+                SELECT AVG(snap_percentage) as avg_snaps
+                FROM depth_charts
+                WHERE player_id = %s
+                AND snap_percentage > 0
+            """
+            snap_result = self.db.execute_query(snap_query, (player_id,))
+            
+            if snap_result and snap_result[0]['avg_snaps']:
+                avg_snaps = float(snap_result[0]['avg_snaps']) / 100.0
+            else:
+                avg_snaps = 0.0
+            
+            if avg_snaps < self.MIN_SNAP_THRESHOLD:
                 skipped_count += 1
                 continue
             
-            impact = self.calculate_injury_impact(
-                injury['player_id'],
-                injury['position'],
-                injury['injury_status']
-            )
+            impact_score = self.calculate_injury_impact(player_id, position, status)
             
-            total_impact += impact
-            
-            injury_info = {
-                'player': injury['player_name'],
-                'position': injury['position'],
-                'status': injury['injury_status'],
-                'body_part': injury.get('body_part', 'Unknown'),
-                'impact_score': impact,
-                'snap_importance': player_importance
+            injury_data = {
+                'player': player_name,
+                'position': position,
+                'status': status,
+                'impact_score': impact_score,
+                'snap_pct': avg_snaps,
+                'week': injury.get('week', week)
             }
             
-            injury_details.append(injury_info)
+            processed_injuries.append(injury_data)
+            total_impact += impact_score
             
-            if injury['position'] == 'QB' or impact >= 4.0:
-                critical_injuries.append(injury_info)
+            if impact_score >= 5.0:
+                critical_injuries.append(injury_data)
         
-        injury_details.sort(key=lambda x: x['impact_score'], reverse=True)
+        processed_injuries.sort(key=lambda x: x['impact_score'], reverse=True)
         
         return {
             'team': team_abbr,
-            'total_impact': round(total_impact, 2),
-            'injury_count': len(injury_details),
+            'total_impact': round(total_impact, 1),
+            'injury_count': len(processed_injuries),
             'skipped_inactive': skipped_count,
             'critical_injuries': critical_injuries,
-            'injuries': injury_details
+            'injuries': processed_injuries
         }
     
     def compare_matchup_injuries(self, home_team, away_team, season=2025, week=None):
+        if week is None:
+            week = self.get_current_nfl_week()
+            
+        print("="*70)
+        print(f"HEAD-TO-HEAD INJURY COMPARISON - Week {week}, {season}")
+        print(f"{away_team} @ {home_team}")
+        print("="*70)
+        
         home_impact = self.get_team_injury_impact(home_team, season, week)
         away_impact = self.get_team_injury_impact(away_team, season, week)
         
-        impact_diff = away_impact['total_impact'] - home_impact['total_impact']
+        print(f"\n{home_team} (Home):")
+        print(f"  Total Impact: {home_impact['total_impact']:.1f}")
+        print(f"  Injuries: {home_impact['injury_count']}")
+        print(f"  Critical: {len(home_impact['critical_injuries'])}")
+        if home_impact['injuries']:
+            print(f"  Top Injuries:")
+            for inj in home_impact['injuries'][:3]:
+                print(f"    • {inj['position']:5} {inj['player']:25} {inj['status']:15} (Impact: {inj['impact_score']:.1f})")
         
-        print("="*70)
-        print(f"INJURY IMPACT ANALYSIS: {away_team} @ {home_team}")
-        print("="*70)
+        print(f"\n{away_team} (Away):")
+        print(f"  Total Impact: {away_impact['total_impact']:.1f}")
+        print(f"  Injuries: {away_impact['injury_count']}")
+        print(f"  Critical: {len(away_impact['critical_injuries'])}")
+        if away_impact['injuries']:
+            print(f"  Top Injuries:")
+            for inj in away_impact['injuries'][:3]:
+                print(f"    • {inj['position']:5} {inj['player']:25} {inj['status']:15} (Impact: {inj['impact_score']:.1f})")
         
-        print(f"\n{home_team} Injuries (Total Impact: {home_impact['total_impact']})")
-        if home_impact['skipped_inactive'] > 0:
-            print(f"  (Skipped {home_impact['skipped_inactive']} inactive/emergency players)")
-        print("-"*70)
-        for inj in home_impact['injuries'][:10]:
-            critical = "⚠️ CRITICAL" if inj in home_impact['critical_injuries'] else ""
-            print(f"  {inj['position']:5} {inj['player']:25} {inj['status']:20} "
-                  f"Impact: {inj['impact_score']:.1f} {critical}")
-        
-        print(f"\n{away_team} Injuries (Total Impact: {away_impact['total_impact']})")
-        if away_impact['skipped_inactive'] > 0:
-            print(f"  (Skipped {away_impact['skipped_inactive']} inactive/emergency players)")
-        print("-"*70)
-        for inj in away_impact['injuries'][:10]:
-            critical = "⚠️ CRITICAL" if inj in away_impact['critical_injuries'] else ""
-            print(f"  {inj['position']:5} {inj['player']:25} {inj['status']:20} "
-                  f"Impact: {inj['impact_score']:.1f} {critical}")
-        
-        print("\n" + "="*70)
-        print("INJURY ADVANTAGE ANALYSIS")
-        print("="*70)
-        
-        if abs(impact_diff) < 3:
-            advantage = "NEUTRAL - Both teams similarly affected by injuries"
-        elif impact_diff > 0:
-            advantage = f"{home_team} has ADVANTAGE - {away_team} more impacted by injuries ({abs(impact_diff):.1f} points)"
+        advantage = home_impact['total_impact'] - away_impact['total_impact']
+        print(f"\n{'='*70}")
+        if abs(advantage) < 5:
+            print(f"INJURY ADVANTAGE: Even (difference: {abs(advantage):.1f})")
+        elif advantage > 0:
+            print(f"INJURY ADVANTAGE: {away_team} by {abs(advantage):.1f} points")
         else:
-            advantage = f"{away_team} has ADVANTAGE - {home_team} more impacted by injuries ({abs(impact_diff):.1f} points)"
-        
-        print(f"\n{advantage}")
-        
-        spread_adjustment = impact_diff * 0.25
-        print(f"\nSuggested spread adjustment: {spread_adjustment:+.1f} points toward {home_team if spread_adjustment > 0 else away_team}")
-        
-        print("\n" + "="*70)
-        
-        return {
-            'home_impact': home_impact,
-            'away_impact': away_impact,
-            'advantage': advantage,
-            'spread_adjustment': spread_adjustment
-        }
+            print(f"INJURY ADVANTAGE: {home_team} by {abs(advantage):.1f} points")
+        print("="*70)
     
-    def generate_weekly_injury_report(self, season=2025, week=6):
+    def generate_weekly_injury_report(self, season=2025, week=None):
+        if week is None:
+            week = self.get_current_nfl_week()
+            
         print("="*70)
         print(f"NFL INJURY IMPACT REPORT - Week {week}, {season}")
         print("="*70)
