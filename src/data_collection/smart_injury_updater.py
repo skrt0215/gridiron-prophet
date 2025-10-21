@@ -81,16 +81,28 @@ def fetch_espn_injuries() -> List[Dict]:
         
         all_elements = main_wrapper.find_all(['div'], class_=['Table__Title', 'ResponsiveTable'])
         
-        current_team = None
-        team_count = 0
+        teams_and_tables = []
+        pending_tables = []
         
         for element in all_elements:
             if 'Table__Title' in element.get('class', []):
-                current_team = element.text.strip()
-                team_count += 1
+                team_name = element.text.strip()
+                teams_and_tables.append({
+                    'team': team_name,
+                    'tables': pending_tables + []
+                })
+                pending_tables = []
             
-            elif 'ResponsiveTable' in element.get('class', []) and current_team:
-                rows = element.find_all('tr')[1:]
+            elif 'ResponsiveTable' in element.get('class', []):
+                pending_tables.append(element)
+        
+        team_count = 0
+        for team_data in teams_and_tables:
+            team_name = team_data['team']
+            team_count += 1
+            
+            for table in team_data['tables']:
+                rows = table.find_all('tr')[1:]
                 
                 for row in rows:
                     cols = row.find_all('td')
@@ -104,7 +116,7 @@ def fetch_espn_injuries() -> List[Dict]:
                     
                     injuries.append({
                         'player_name': player_name,
-                        'team': current_team,
+                        'team': team_name,
                         'position': position,
                         'injury_status': injury_status,
                         'injury_description': injury_description,
