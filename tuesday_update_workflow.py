@@ -44,20 +44,57 @@ def run_script(script_path: Path, description: str) -> bool:
 
 
 def get_current_nfl_week() -> int:
-    db = DatabaseManager()
+    SEASON_2025_WEEKS = {
+        1: ("2025-09-05", "2025-09-09"),
+        2: ("2025-09-10", "2025-09-16"),
+        3: ("2025-09-17", "2025-09-23"),
+        4: ("2025-09-24", "2025-09-30"),
+        5: ("2025-10-01", "2025-10-07"),
+        6: ("2025-10-08", "2025-10-14"),
+        7: ("2025-10-15", "2025-10-21"),
+        8: ("2025-10-22", "2025-10-28"),
+        9: ("2025-10-29", "2025-11-04"),
+        10: ("2025-11-05", "2025-11-11"),
+        11: ("2025-11-12", "2025-11-18"),
+        12: ("2025-11-19", "2025-11-25"),
+        13: ("2025-11-26", "2025-12-02"),
+        14: ("2025-12-03", "2025-12-09"),
+        15: ("2025-12-10", "2025-12-16"),
+        16: ("2025-12-17", "2025-12-23"),
+        17: ("2025-12-24", "2025-12-30"),
+        18: ("2025-12-31", "2026-01-05"),
+    }
+    
     try:
-        result = db.execute_query("""
-            SELECT MAX(week) 
-            FROM games 
-            WHERE season = 2025 
-            AND home_score IS NOT NULL
-        """)
+        today = datetime.now().date()
         
-        completed_week = result[0][0] if result and result[0][0] else 0
-        return completed_week + 1
+        for week, (start_str, end_str) in SEASON_2025_WEEKS.items():
+            start = datetime.strptime(start_str, "%Y-%m-%d").date()
+            end = datetime.strptime(end_str, "%Y-%m-%d").date()
+            
+            if start <= today <= end:
+                return week
+        
+        last_week_end = datetime.strptime(SEASON_2025_WEEKS[18][1], "%Y-%m-%d").date()
+        if today > last_week_end:
+            return 18
+        
+        return 1
+        
     except Exception as e:
-        print(f"⚠️  Error getting current week: {e}")
-        return 7
+        print(f"⚠️  Error getting current week from date: {e}")
+        db = DatabaseManager()
+        try:
+            result = db.execute_query("""
+                SELECT MAX(week) 
+                FROM games 
+                WHERE season = 2025 
+                AND home_score IS NOT NULL
+            """)
+            completed_week = result[0][0] if result and result[0][0] else 0
+            return completed_week + 1
+        except:
+            return 9
 
 
 def verify_data_quality(db: DatabaseManager, current_week: int) -> dict:
@@ -164,7 +201,7 @@ def main():
     
     time.sleep(2)
     
-    print_step(3, total_steps, "Fetch Betting Lines (DraftKings)")
+    print_step(4, total_steps, "Fetch Betting Lines (DraftKings)")
     if run_script(data_collection_dir / 'fetch_betting_lines.py', "Betting Lines"):
         completed_steps += 1
     else:
@@ -173,7 +210,7 @@ def main():
     
     time.sleep(2)
     
-    print_step(4, total_steps, "Verify Data Quality")
+    print_step(5, total_steps, "Verify Data Quality")
     db = DatabaseManager()
     try:
         quality = verify_data_quality(db, current_week)
