@@ -153,7 +153,7 @@ def main():
     print("=" * 60)
     
     season = 2025
-    week = 6  
+    week = 8 
     
     games = fetcher.fetch_scoreboard(season=season, week=week)
     
