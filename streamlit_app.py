@@ -12,6 +12,12 @@ import plotly.graph_objects as go
 
 st.set_page_config(page_title="Gridiron Prophet", page_icon="🏈", layout="wide", initial_sidebar_state="collapsed")
 
+@st.cache_resource
+def load_predictor():
+    predictor = MasterBettingPredictor()
+    predictor.train_ml_model()
+    return predictor
+
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;900&display=swap');
@@ -325,8 +331,7 @@ with tab1:
         st.info(f"🔮 Auto-loading Week {st.session_state.current_week} predictions...")
         with st.spinner("Training model and analyzing games..."):
             try:
-                predictor = MasterBettingPredictor()
-                predictor.train_ml_model()
+                predictor = load_predictor()
                 
                 odds_data = predictor.fetch_draftkings_lines()
                 
@@ -665,8 +670,7 @@ with tab3:
     
     if st.button("⚔️ ANALYZE MATCHUP", use_container_width=True):
         with st.spinner("Comparing teams..."):
-            predictor = MasterBettingPredictor()
-            predictor.train_ml_model()
+            predictor = load_predictor()
             
             prediction = predictor.calculate_comprehensive_prediction(home_team, away_team, st.session_state.current_season, st.session_state.current_week)
             
