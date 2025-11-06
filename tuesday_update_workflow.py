@@ -94,7 +94,7 @@ def get_current_nfl_week() -> int:
             completed_week = result[0][0] if result and result[0][0] else 0
             return completed_week + 1
         except:
-            return 10
+            return 9
 
 
 def verify_data_quality(db: DatabaseManager, current_week: int) -> dict:
