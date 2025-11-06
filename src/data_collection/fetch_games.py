@@ -7,19 +7,16 @@ from datetime import datetime
 from database.db_manager import DatabaseManager
 
 class NFLGameFetcher:
-    """Fetches NFL game data from ESPN API"""
     
     def __init__(self):
         self.db = DatabaseManager()
         self.base_url = "https://site.api.espn.com/apis/site/v2/sports/football/nfl"
     
     def get_team_id_by_abbreviation(self, abbr):
-        """Get team_id from database by abbreviation"""
         team = self.db.get_team_by_abbreviation(abbr)
         return team['team_id'] if team else None
     
     def fetch_scoreboard(self, season=2024, week=None):
-        """Fetch games from ESPN scoreboard. If week is None, fetches current week"""
         url = f"{self.base_url}/scoreboard"
         
         params = {}
@@ -41,7 +38,6 @@ class NFLGameFetcher:
             return []
     
     def parse_scoreboard_data(self, data, season, week):
-        """Parse ESPN scoreboard JSON data"""
         games = []
         
         if 'events' not in data:
@@ -60,7 +56,6 @@ class NFLGameFetcher:
         return games
     
     def extract_game_info(self, event, season, week):
-        """Extract relevant game information from ESPN event data"""
         
         competition = event['competitions'][0]
         home_team = None
@@ -111,7 +106,6 @@ class NFLGameFetcher:
         }
     
     def save_games_to_db(self, games):
-        """Save fetched games to database"""
         added_count = 0
         
         for game in games:
@@ -145,6 +139,48 @@ class NFLGameFetcher:
         
         return added_count
 
+def get_current_nfl_week() -> int:
+    SEASON_2025_WEEKS = {
+        1: ("2025-09-05", "2025-09-09"),
+        2: ("2025-09-10", "2025-09-16"),
+        3: ("2025-09-17", "2025-09-23"),
+        4: ("2025-09-24", "2025-09-30"),
+        5: ("2025-10-01", "2025-10-07"),
+        6: ("2025-10-08", "2025-10-14"),
+        7: ("2025-10-15", "2025-10-21"),
+        8: ("2025-10-22", "2025-10-28"),
+        9: ("2025-10-29", "2025-11-04"),
+        10: ("2025-11-05", "2025-11-11"),
+        11: ("2025-11-12", "2025-11-18"),
+        12: ("2025-11-19", "2025-11-25"),
+        13: ("2025-11-26", "2025-12-02"),
+        14: ("2025-12-03", "2025-12-09"),
+        15: ("2025-12-10", "2025-12-16"),
+        16: ("2025-12-17", "2025-12-23"),
+        17: ("2025-12-24", "2025-12-30"),
+        18: ("2025-12-31", "2026-01-05"),
+    }
+    
+    try:
+        today = datetime.now().date()
+        
+        for week, (start_str, end_str) in SEASON_2025_WEEKS.items():
+            start = datetime.strptime(start_str, "%Y-%m-%d").date()
+            end = datetime.strptime(end_str, "%Y-%m-%d").date()
+            
+            if start <= today <= end:
+                return week
+        
+        last_week_end = datetime.strptime(SEASON_2025_WEEKS[18][1], "%Y-%m-%d").date()
+        if today > last_week_end:
+            return 18
+        
+        return 1
+        
+    except Exception as e:
+        print(f"⚠️  Error getting current week: {e}")
+        return 10
+
 def main():
     fetcher = NFLGameFetcher()
     
@@ -153,9 +189,13 @@ def main():
     print("=" * 60)
     
     season = 2025
-    week = 8 
+    current_week = get_current_nfl_week()
+    completed_week = current_week - 1
     
-    games = fetcher.fetch_scoreboard(season=season, week=week)
+    print(f"📅 Current Week: {current_week}")
+    print(f"🎯 Fetching completed games from Week {completed_week}")
+    
+    games = fetcher.fetch_scoreboard(season=season, week=completed_week)
     
     if games:
         print(f"\nFound {len(games)} games")
