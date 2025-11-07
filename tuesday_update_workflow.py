@@ -149,7 +149,7 @@ def main():
     current_week = get_current_nfl_week()
     print(f"📊 Current NFL Week: {current_week}")
     
-    total_steps = 6
+    total_steps = 7
     completed_steps = 0
     failed_steps = []
     
@@ -165,7 +165,16 @@ def main():
     
     time.sleep(2)
     
-    print_step(2, total_steps, "Calculate Previous Week Accuracy")
+    print_step(2, total_steps, "Update Rosters (Trades & New Signings)")
+    if run_script(data_collection_dir / 'smart_roster_updater.py', "Roster Updates"):
+        completed_steps += 1
+    else:
+        print("⚠️  Roster update failed - continuing with existing rosters")
+        failed_steps.append("Roster Updates (non-critical)")
+    
+    time.sleep(2)
+    
+    print_step(3, total_steps, "Calculate Previous Week Accuracy")
     previous_week = current_week - 1
     if previous_week > 0:
         print(f"\n📊 Calculating accuracy for completed Week {previous_week}...")
@@ -193,7 +202,7 @@ def main():
     
     time.sleep(2)
     
-    print_step(3, total_steps, "Update Injuries (ESPN Scraper)")
+    print_step(4, total_steps, "Update Injuries (ESPN Scraper)")
     if run_script(data_collection_dir / 'smart_injury_updater.py', "Injury Data"):
         completed_steps += 1
     else:
@@ -201,7 +210,7 @@ def main():
     
     time.sleep(2)
     
-    print_step(4, total_steps, "Fetch Betting Lines (DraftKings)")
+    print_step(5, total_steps, "Fetch Betting Lines (DraftKings)")
     if run_script(data_collection_dir / 'fetch_betting_lines.py', "Betting Lines"):
         completed_steps += 1
     else:
@@ -210,7 +219,7 @@ def main():
     
     time.sleep(2)
     
-    print_step(5, total_steps, "Verify Data Quality")
+    print_step(6, total_steps, "Verify Data Quality")
     db = DatabaseManager()
     try:
         quality = verify_data_quality(db, current_week)
@@ -231,7 +240,7 @@ def main():
     
     time.sleep(2)
     
-    print_step(6, total_steps, "Generate Predictions (Master Betting Predictor)")
+    print_step(7, total_steps, "Generate Predictions (Master Betting Predictor)")
     if run_script(models_dir / 'master_betting_predictor.py', "Predictions"):
         completed_steps += 1
     else:
@@ -262,10 +271,10 @@ def main():
     print(f"  4. Look for betting opportunities with ≥5pt edge")
     
     print("\n💡 OPTIONAL:")
-    print("  - Update rosters (only if major trades occurred):")
-    print("    python src/data_collection/init_rosters_2025.py")
     print("  - Track ROI after games complete:")
     print("    python src/betting/roi_tracker.py")
+    print("  - View season accuracy trend:")
+    print("    python src/analysis/calculate_weekly_accuracy.py --season 2025 --view --detailed")
     
     print("\n" + "="*70)
     print("✨ Weekly Update Complete! Good luck this week! ✨")
