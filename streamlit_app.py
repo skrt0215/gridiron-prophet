@@ -18,6 +18,28 @@ def load_predictor():
     predictor.train_ml_model()
     return predictor
 
+@st.cache_resource
+def get_db():
+    return DatabaseManager()
+
+@st.cache_resource
+def get_injury_analyzer():
+    return InjuryImpactAnalyzer()
+
+@st.cache_data(ttl=3600)
+def get_overall_accuracy_display():
+    """Overall winner-prediction accuracy from stored weekly results, or 'N/A'."""
+    try:
+        rows = get_db().execute_query(
+            "SELECT SUM(correct_predictions) AS correct, "
+            "SUM(total_predictions) AS total FROM weekly_accuracy"
+        )
+        if rows and rows[0]['total']:
+            return f"{rows[0]['correct'] / rows[0]['total'] * 100:.1f}%"
+    except Exception:
+        pass
+    return "N/A"
+
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;900&display=swap');
@@ -402,7 +424,7 @@ with tab1:
         with col1:
             st.markdown(f"""
             <div class="metric-card">
-                <div class="metric-value">68.87%</div>
+                <div class="metric-value">{get_overall_accuracy_display()}</div>
                 <div class="metric-label">Model Accuracy</div>
             </div>
             """, unsafe_allow_html=True)
@@ -453,8 +475,9 @@ with tab1:
             
             conf_pct = 95 if rec['confidence'] == 'HIGH' else 75 if rec['confidence'] == 'MEDIUM' else 55
             
-            away_team = rec['game'].split(' @ ')[0]
-            home_team = rec['game'].split(' @ ')[1]
+            game_parts = rec['game'].split(' @ ')
+            away_team = game_parts[0]
+            home_team = game_parts[1] if len(game_parts) > 1 else ''
             
             away_logo = f"https://a.espncdn.com/i/teamlogos/nfl/500/{away_team}.png"
             home_logo = f"https://a.espncdn.com/i/teamlogos/nfl/500/{home_team}.png"
@@ -517,8 +540,9 @@ with tab1:
                     """, unsafe_allow_html=True)
                 
                 with col_copy:
+                    bet_safe = rec['bet'].replace("\\", "").replace("'", "")
                     st.markdown(f"""
-                    <button onclick="navigator.clipboard.writeText('{rec['bet']}').then(() => {{
+                    <button onclick="navigator.clipboard.writeText('{bet_safe}').then(() => {{
                         this.innerHTML = '✅ Copied!';
                         setTimeout(() => {{ this.innerHTML = '📋 Copy'; }}, 2000);
                     }})" 
@@ -564,7 +588,7 @@ with tab1:
 with tab2:
     st.markdown("<div class='section-header'>INJURY ANALYSIS</div>", unsafe_allow_html=True)
     
-    analyzer = InjuryImpactAnalyzer()
+    analyzer = get_injury_analyzer()
     teams = analyzer.db.get_all_teams()
     team_abbrs = sorted([t['abbreviation'] for t in teams])
     
@@ -653,7 +677,7 @@ with tab2:
 with tab3:
     st.markdown("<div class='section-header'>HEAD-TO-HEAD MATCHUP</div>", unsafe_allow_html=True)
     
-    analyzer = InjuryImpactAnalyzer()
+    analyzer = get_injury_analyzer()
     teams = analyzer.db.get_all_teams()
     team_abbrs = sorted([t['abbreviation'] for t in teams])
     
@@ -738,7 +762,7 @@ with tab3:
 with tab4:
     st.markdown("<div class='section-header'>TEAM ROSTERS</div>", unsafe_allow_html=True)
     
-    analyzer = InjuryImpactAnalyzer()
+    analyzer = get_injury_analyzer()
     teams = analyzer.db.get_all_teams()
     team_abbrs = sorted([t['abbreviation'] for t in teams])
     
@@ -810,7 +834,7 @@ with tab4:
 with tab5:
     st.markdown("<div class='section-header'>WEEKLY ACCURACY</div>", unsafe_allow_html=True)
     
-    db = DatabaseManager()
+    db = get_db()
     
     accuracy_data = db.execute_query("""
         SELECT 
@@ -932,11 +956,11 @@ with tab6:
     faq_tab1, faq_tab2, faq_tab3 = st.tabs(["📊 Model", "💰 Strategy", "🎯 Accuracy"])
     
     with faq_tab1:
-        st.markdown("""
+        st.markdown(f"""
         ### Machine Learning Component
         - **Training Data**: 800+ NFL games (2022-2024)
         - **Algorithm**: Random Forest Classifier
-        - **Current Accuracy**: 68.87%
+        - **Current Accuracy**: {get_overall_accuracy_display()}
         - **Updates**: Every Tuesday with new results
         
         ### Key Factors Analyzed
@@ -976,11 +1000,10 @@ with tab6:
         """)
     
     with faq_tab3:
-        st.markdown("""
+        st.markdown(f"""
         ### Performance Metrics
-        - **Overall Win Rate**: 68.87%
+        - **Model Accuracy**: {get_overall_accuracy_display()}
         - **Breakeven Rate**: 52.4% (at -110 odds)
-        - **Edge Over Market**: 16.47%
         
         ### Weekly Updates
         1. Monday: Collect results
@@ -1001,9 +1024,9 @@ with tab6:
         """)
 
 st.markdown("---")
-st.markdown("""
+st.markdown(f"""
 <div style="text-align: center; color: #94a3b8; padding: 1rem;">
-    <strong>Gridiron Prophet</strong> | Model Accuracy: 68.87% | Created by Kurt<br>
+    <strong>Gridiron Prophet</strong> | Model Accuracy: {get_overall_accuracy_display()} | Created by Kurt<br>
     <span style="font-size: 0.85rem;">Bet responsibly. Past performance does not guarantee future results.</span>
 </div>
 """, unsafe_allow_html=True)
