@@ -6,6 +6,13 @@ from database.db_manager import DatabaseManager
 import pandas as pd
 from datetime import datetime
 
+# Standard -110 odds: a winning bet returns 10/11 of the stake as profit, and you
+# must win 52.4% of -110 bets to break even.
+WIN_PAYOUT_MULTIPLIER = 100 / 110
+BREAK_EVEN_WIN_RATE = 52.4
+PUSH_THRESHOLD = 0.5
+
+
 class ROITracker:
     """Track betting performance and calculate ROI"""
     
@@ -60,26 +67,32 @@ class ROITracker:
     
     def update_prediction_result(self, prediction_id, home_score, away_score):
         """Update prediction with actual game result and calculate profit/loss"""
-        pred = self.db.execute_query("""
+        rows = self.db.execute_query("""
             SELECT * FROM prediction_log WHERE prediction_id = %s
-        """, (prediction_id,))[0]
-        
-        actual_spread = home_score - away_score
-        vegas_spread = pred['vegas_spread']
+        """, (prediction_id,))
+        if not rows:
+            raise ValueError(f"No prediction found with prediction_id={prediction_id}")
+        pred = rows[0]
+
+        actual_spread = home_score - away_score   # home margin: positive = home won by N
+        vegas_spread = pred['vegas_spread']        # home line: negative = home favored
         bet_amount = pred['bet_amount']
         recommendation = pred['recommendation']
 
-        if 'HOME' in recommendation:
-            bet_result = 'WIN' if actual_spread > vegas_spread else 'LOSS'
-            if abs(actual_spread - vegas_spread) < 0.5:
-                bet_result = 'PUSH'
-        else:  
-            bet_result = 'WIN' if actual_spread < vegas_spread else 'LOSS'
-            if abs(actual_spread - vegas_spread) < 0.5:
-                bet_result = 'PUSH'
-        
+        # A home-side bet covers when (home margin + home line) > 0; the away side
+        # is the mirror image. vegas_spread and actual_spread use opposite sign
+        # conventions, so they are added rather than compared directly.
+        cover_margin = actual_spread + vegas_spread
+
+        if abs(cover_margin) < PUSH_THRESHOLD:
+            bet_result = 'PUSH'
+        elif 'HOME' in recommendation:
+            bet_result = 'WIN' if cover_margin > 0 else 'LOSS'
+        else:
+            bet_result = 'WIN' if cover_margin < 0 else 'LOSS'
+
         if bet_result == 'WIN':
-            profit_loss = bet_amount * 0.909
+            profit_loss = bet_amount * WIN_PAYOUT_MULTIPLIER
         elif bet_result == 'PUSH':
             profit_loss = 0
         else:
@@ -197,7 +210,7 @@ class ROITracker:
         print(f"  Total Profit/Loss: ${total_profit:,.2f}")
         print(f"  ROI: {overall_roi:+.2f}%")
         
-        break_even_rate = 52.4
+        break_even_rate = BREAK_EVEN_WIN_RATE
         print(f"\n  Break-even Win Rate: {break_even_rate}%")
         if overall_win_rate > break_even_rate:
             print(f"  ✓ PROFITABLE! ({overall_win_rate - break_even_rate:.1f}% above break-even)")
