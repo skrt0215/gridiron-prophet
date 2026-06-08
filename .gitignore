@@ -6,6 +6,7 @@ __pycache__/
 .Python
 env/
 venv/
+venv_old/
 ENV/
 build/
 develop-eggs/
