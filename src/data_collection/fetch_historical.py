@@ -40,7 +40,7 @@ def fetch_historical_games(seasons):
             if 'gametime' in game and game['gametime']:
                 try:
                     game_time = datetime.strptime(str(game['gametime']), '%H:%M:%S').time()
-                except:
+                except (ValueError, TypeError):
                     pass
             
             game_status = 'Final' if game['home_score'] is not None else 'Scheduled'

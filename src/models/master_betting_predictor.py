@@ -136,8 +136,11 @@ class MasterBettingPredictor:
             'away_avg_points_allowed': away_stats['avg_points_allowed']
         }])
         
+        if self.ml_predictor.model is None:
+            raise RuntimeError("ML model is not trained. Call train_ml_model() first.")
+
         home_win_prob = self.ml_predictor.model.predict_proba(features)[0][1]
-        
+
         return home_win_prob
     
     def fetch_draftkings_lines(self):
@@ -155,10 +158,11 @@ class MasterBettingPredictor:
         }
         
         try:
-            response = requests.get(url, params=params)
+            response = requests.get(url, params=params, timeout=30)
             response.raise_for_status()
             return response.json()
-        except:
+        except requests.exceptions.RequestException as e:
+            print(f"⚠️  Could not fetch DraftKings lines: {e}")
             return None
     
     def parse_odds_for_game(self, odds_data, home_team, away_team):

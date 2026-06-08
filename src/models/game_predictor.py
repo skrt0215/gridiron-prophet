@@ -209,6 +209,10 @@ class NFLGamePredictor:
     
     def load_model(self, filepath='src/models/spread_model.pkl'):
         """Load a trained model from disk"""
+        if not os.path.exists(filepath):
+            raise FileNotFoundError(
+                f"Model file not found: {filepath}. Train and save a model first."
+            )
         with open(filepath, 'rb') as f:
             model_data = pickle.load(f)
         self.model = model_data['model']

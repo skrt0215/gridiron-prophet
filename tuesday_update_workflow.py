@@ -86,15 +86,16 @@ def get_current_nfl_week() -> int:
         db = DatabaseManager()
         try:
             result = db.execute_query("""
-                SELECT MAX(week) 
-                FROM games 
-                WHERE season = 2025 
+                SELECT MAX(week) AS max_week
+                FROM games
+                WHERE season = 2025
                 AND home_score IS NOT NULL
             """)
-            completed_week = result[0][0] if result and result[0][0] else 0
+            completed_week = result[0]['max_week'] if result and result[0]['max_week'] else 0
             return completed_week + 1
-        except:
-            return 9
+        except Exception as inner_e:
+            print(f"⚠️  Could not derive week from database: {inner_e}")
+            return 1
 
 
 def verify_data_quality(db: DatabaseManager, current_week: int) -> dict:

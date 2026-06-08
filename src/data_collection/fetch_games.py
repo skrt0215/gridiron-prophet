@@ -16,7 +16,7 @@ class NFLGameFetcher:
         team = self.db.get_team_by_abbreviation(abbr)
         return team['team_id'] if team else None
     
-    def fetch_scoreboard(self, season=2024, week=None):
+    def fetch_scoreboard(self, season=2025, week=None):
         url = f"{self.base_url}/scoreboard"
         
         params = {}
@@ -27,10 +27,10 @@ class NFLGameFetcher:
         print(f"Fetching games for {season} season, week {week if week else 'current'}...")
         
         try:
-            response = requests.get(url, params=params)
+            response = requests.get(url, params=params, timeout=30)
             response.raise_for_status()
             data = response.json()
-            
+
             return self.parse_scoreboard_data(data, season, week)
             
         except requests.exceptions.RequestException as e:
