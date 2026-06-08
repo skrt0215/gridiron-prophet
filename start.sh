@@ -12,7 +12,7 @@ else
     echo "✅ MySQL already running"
 fi
 
-cd "/Users/steven/Desktop/NFL Game Analyzer/gridiron-prophet"
+cd "$(dirname "$0")"
 
 if [ ! -d "venv" ]; then
     echo "⚠️  Virtual environment not found. Creating one..."
@@ -23,7 +23,7 @@ echo "Activating virtual environment..."
 source venv/bin/activate
 
 echo "📦 Checking dependencies..."
-pip install -q streamlit pandas numpy scikit-learn scipy requests pymysql python-dotenv beautifulsoup4 plotly 2>/dev/null
+pip install -q -r requirements.txt 2>/dev/null
 
 echo "✅ Dependencies ready!"
 
@@ -55,7 +55,7 @@ echo "Public Link:"
 sleep 3
 curl -s http://localhost:4040/api/tunnels | grep -o '"public_url":"[^"]*' | grep -o 'https://[^"]*' | head -1
 echo ""
-echo "🔐 Password: Cheesetouch123!"
+echo "🔐 Password: ${GRIDIRON_ACCESS_PASSWORD:-<set GRIDIRON_ACCESS_PASSWORD in your environment>}"
 echo ""
 echo "Press Ctrl+C to stop everything"
 echo "================================"
