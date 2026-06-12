@@ -13,18 +13,25 @@ class DatabaseManager:
         self.password = os.getenv('DB_PASSWORD')
         self.database = os.getenv('DB_NAME')
         self.port = int(os.getenv('DB_PORT', 3306))
-        
+        # Optional TLS for remote databases. Enable with DB_SSL=true, and
+        # optionally point DB_SSL_CA at a CA bundle for certificate verification.
+        self.ssl_ca = os.getenv('DB_SSL_CA')
+        self.use_ssl = os.getenv('DB_SSL', '').strip().lower() in ('1', 'true', 'yes') or bool(self.ssl_ca)
+
     @contextmanager
     def get_connection(self):
         """Context manager for database connections"""
-        connection = pymysql.connect(
+        connect_kwargs = dict(
             host=self.host,
             user=self.user,
             password=self.password,
             database=self.database,
             port=self.port,
-            cursorclass=DictCursor
+            cursorclass=DictCursor,
         )
+        if self.use_ssl:
+            connect_kwargs['ssl'] = {'ca': self.ssl_ca} if self.ssl_ca else {}
+        connection = pymysql.connect(**connect_kwargs)
         try:
             yield connection
             connection.commit()
