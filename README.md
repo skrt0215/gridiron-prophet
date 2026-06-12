@@ -1,42 +1,74 @@
-# Gridiron Prophet
+# 🏈 Gridiron Prophet
 
-Gridiron Prophet is a program that has been trained to analyze, process, and predict the scores of past, present, and future games for the NFL. It has been trained with a sample size spanning four seasons (755+ games!), injury reports, player trends, and MUCH MORE to give you the most accurate recommendation while also deciding on which side of the ball to bet on based on Vegas odds. 
+**Find the edge before kickoff.** Gridiron Prophet analyzes four seasons of NFL
+data, factors in live injuries, and predicts every game's spread — then compares
+it to the Vegas line to flag where the value is.
 
-## Usage
-- The finalized product is currently being prepared for deployment, with NUMEROUS updates to not only enhance the 
-user experience, but to also improve betting line prediction accuracy!
+![Python](https://img.shields.io/badge/Python-3.11+-blue)
+![MySQL](https://img.shields.io/badge/MySQL-8.0-4479A1)
+![Streamlit](https://img.shields.io/badge/Streamlit-dashboard-FF4B4B)
 
-## Features
-- Predictive models for game outcomes
-- Spread analyzer for betting predictions
-- Live injury report tracking
-- Confidence level in bets
-- Live training weekly after games are had
-- Head to head! Choose two teams to face off for the bot to make a determination based off of its own thought process!
-- Weekly analytics chart to view model accuracy and trends
+> For educational and entertainment use only — not betting advice. Bet responsibly.
 
-## Tech Stack
-- Python 3.11+ (REQUIRED)
-- Pandas, NumPy (Data Analysis)
-- Scikit-learn (Machine Learning)
-- Streamlit, ngrok (Visualization & Deployment)
-- MySQL (Data Entry and Storage)
+---
+
+## What it does
+
+- **Weekly picks** — every matchup gets a predicted spread, win probability,
+  and confidence level. Games with a **3+ point edge** over Vegas get flagged.
+- **Injury intelligence** — see how each team's injuries actually move the line,
+  weighted by position and playing time.
+- **Head-to-head** — pit any two teams against each other for an instant breakdown.
+- **Honest accuracy tracking** — predictions are logged *before* games and graded
+  after, so the accuracy numbers are real, not cherry-picked.
+- **Rosters & reports** — browse active rosters and weekly injury reports in one place.
+
+All of it lives in a clean, interactive dashboard.
+
+## How it works
+
+Gridiron Prophet trains two machine-learning models on 2022–2025 results — one for
+win probability, one for the point spread — using only the information available
+*before* each game. It then layers in an injury-impact score and checks the result
+against live DraftKings lines to find mispriced games. Every Tuesday it pulls fresh
+results, retrains, and grades its last set of picks.
+
+## Quick start
+
+```bash
+git clone <your-repo-url>
+cd gridiron-prophet
+python -m venv venv && source venv/bin/activate   # Windows: .\venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+
+# Set up the database, then create config/.env with your DB creds + a password
+mysql -u <user> -p <db_name> < src/database/schema
+
+# Launch
+streamlit run streamlit_app.py
+```
+
+Open the dashboard, enter your access password, and you're in.
+
+### Configuration (`config/.env`)
+| Variable | Purpose |
+|----------|---------|
+| `DB_HOST` `DB_PORT` `DB_USER` `DB_PASSWORD` `DB_NAME` | MySQL connection |
+| `GRIDIRON_ACCESS_PASSWORD` | Dashboard login (**required**) |
+| `ODDS_API_KEY` | Live DraftKings lines (optional) |
+| `DB_SSL` | Set `true` for a hosted database (optional) |
+
+## Tech stack
+
+Python · scikit-learn · pandas · MySQL · Streamlit · Plotly — data from ESPN and
+The Odds API.
 
 ## Roadmap
-- [x] Set up project structure and database schema
-- [x] Create database connection and management system
-- [x] Populate database with NFL teams
-- [x] Build data collection pipeline for historical games
-- [x] Fetch current season game data and stats
-- [x] Implement injury tracking system
-- [x] Add depth chart data collection
-- [x] Integrate betting odds APIs
-- [x] Build initial prediction models
-- [ ] Create player performance analytics
-- [x] Develop visualization dashboard
-- [x] Backtesting framework for model validation
-- [x] Real-time prediction system
-- [ ] Real-time analysis post game for accuracy in training
-- [ ] Weather forecast to implement into the decision process
-- [x] Weekly generated report
-- [x] Optimized streamlit site for public usage and better interaction
+- [x] Win + spread models with weekly retraining
+- [x] Injury-impact analysis and live edge detection
+- [x] Self-grading accuracy & ROI tracking
+- [ ] Player-level analytics
+- [ ] Weather in the prediction pipeline
+
+## License
+See [LICENSE](LICENSE).
