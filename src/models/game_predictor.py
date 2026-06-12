@@ -5,19 +5,26 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from database.db_manager import DatabaseManager
 import pandas as pd
 import numpy as np
-from sklearn.ensemble import RandomForestClassifier
+from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
+from sklearn.metrics import mean_absolute_error
 import pickle
 
 class NFLGamePredictor:
     """
-    Machine Learning model for predicting NFL game outcomes
+    Machine Learning model for predicting NFL game outcomes.
+
+    Trains two models on the same feature set:
+      - ``model``: a classifier for home-win probability
+      - ``margin_model``: a regressor for the home scoring margin
+        (home_score - away_score), which drives the betting line.
     """
-    
+
     def __init__(self):
         self.db = DatabaseManager()
         self.model = None
+        self.margin_model = None
         self.feature_columns = None
     
     def fetch_training_data(self, seasons, max_week_2025=None):
@@ -104,7 +111,8 @@ class NFLGamePredictor:
                     'away_win_pct': away_stats['wins'] / max(away_games, 1),
                     'away_avg_points_scored': np.mean(away_stats['points_scored']) if away_stats['points_scored'] else 0,
                     'away_avg_points_allowed': np.mean(away_stats['points_allowed']) if away_stats['points_allowed'] else 0,
-                    'home_win': game['home_win']
+                    'home_win': game['home_win'],
+                    'home_margin': game['home_score'] - game['away_score']
                 }
                 
                 features_list.append(features)
@@ -152,27 +160,44 @@ class NFLGamePredictor:
         
         X = features_df[self.feature_columns]
         y = features_df['home_win']
+        y_margin = features_df['home_margin']
         X_train, X_test, y_train, y_test = train_test_split(
             X, y, test_size=0.2, random_state=42, shuffle=False
         )
-        
+        # Same chronological split for the margin regressor.
+        _, _, ym_train, ym_test = train_test_split(
+            X, y_margin, test_size=0.2, random_state=42, shuffle=False
+        )
+
         print(f"Training set: {len(X_train)} games")
         print(f"Test set: {len(X_test)} games")
-        print("\nTraining Random Forest model...")
+        print("\nTraining Random Forest win classifier...")
         self.model = RandomForestClassifier(
             n_estimators=100,
             max_depth=10,
             random_state=42,
             n_jobs=-1
         )
-        
         self.model.fit(X_train, y_train)
+
+        print("Training Random Forest margin regressor...")
+        self.margin_model = RandomForestRegressor(
+            n_estimators=200,
+            max_depth=10,
+            random_state=42,
+            n_jobs=-1
+        )
+        self.margin_model.fit(X_train, ym_train)
+        margin_pred = self.margin_model.predict(X_test)
+        margin_mae = mean_absolute_error(ym_test, margin_pred)
+
         y_pred = self.model.predict(X_test)
         accuracy = accuracy_score(y_test, y_pred)
         print("\n" + "=" * 70)
         print("MODEL PERFORMANCE")
         print("=" * 70)
-        print(f"\nAccuracy: {accuracy:.2%}")
+        print(f"\nWin-classifier accuracy: {accuracy:.2%}")
+        print(f"Margin regressor MAE:    {margin_mae:.2f} points")
         print("\nClassification Report:")
         print(classification_report(y_test, y_pred, target_names=['Away Win', 'Home Win']))
         print("\nConfusion Matrix:")
@@ -194,21 +219,26 @@ class NFLGamePredictor:
         return accuracy
     
     def save_model(self, filepath='src/models/spread_model.pkl'):
-        """Save the trained model to disk"""
-        if self.model is None:
+        """Save the trained models to disk"""
+        if self.model is None or self.margin_model is None:
             raise ValueError("No model to save. Train the model first.")
         model_data = {
             'model': self.model,
+            'margin_model': self.margin_model,
             'feature_columns': self.feature_columns
         }
-        
+
         os.makedirs(os.path.dirname(filepath), exist_ok=True)
         with open(filepath, 'wb') as f:
             pickle.dump(model_data, f)
         print(f"\n✓ Model saved to {filepath}")
-    
+
     def load_model(self, filepath='src/models/spread_model.pkl'):
-        """Load a trained model from disk"""
+        """Load trained models from disk.
+
+        Raises FileNotFoundError if no model file exists, or KeyError if the
+        file predates the margin regressor (caller should retrain in that case).
+        """
         if not os.path.exists(filepath):
             raise FileNotFoundError(
                 f"Model file not found: {filepath}. Train and save a model first."
@@ -216,8 +246,15 @@ class NFLGamePredictor:
         with open(filepath, 'rb') as f:
             model_data = pickle.load(f)
         self.model = model_data['model']
+        self.margin_model = model_data['margin_model']
         self.feature_columns = model_data['feature_columns']
         print(f"✓ Model loaded from {filepath}")
+
+    def predict_margin(self, features):
+        """Predict home scoring margin (home_score - away_score) for a feature row."""
+        if self.margin_model is None:
+            raise ValueError("Margin model not trained. Call train_model() first.")
+        return float(self.margin_model.predict(features)[0])
     
     def predict_game(self, home_team_stats, away_team_stats):
         """

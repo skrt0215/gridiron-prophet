@@ -37,15 +37,25 @@ class MasterBettingPredictor:
         Args:
             max_week_2025: If provided, includes 2025 games up to this week
         """
-        if not self.ml_trained:
-            if max_week_2025:
-                print(f"\n🤖 Training ML Model on 2022-2024 + 2025 (through Week {max_week_2025})...")
-                self.ml_predictor.train_model([2022, 2023, 2024, 2025], max_week_2025=max_week_2025)
-            else:
+        if self.ml_trained:
+            return
+
+        if max_week_2025:
+            # Weekly retrain: always train fresh so the latest results are included,
+            # then persist for fast app startup.
+            print(f"\n🤖 Training ML Model on 2022-2024 + 2025 (through Week {max_week_2025})...")
+            self.ml_predictor.train_model([2022, 2023, 2024, 2025], max_week_2025=max_week_2025)
+            self.ml_predictor.save_model()
+        else:
+            # Default path (e.g. the dashboard): reuse the saved model when present.
+            try:
+                self.ml_predictor.load_model()
+            except (FileNotFoundError, KeyError):
                 print("\n🤖 Training ML Model on Historical Data (2022-2024)...")
                 self.ml_predictor.train_model([2022, 2023, 2024])
-            self.ml_trained = True
-            print("✓ ML Model Ready\n")
+                self.ml_predictor.save_model()
+        self.ml_trained = True
+        print("✓ ML Model Ready\n")
     
     def get_team_current_stats(self, team_abbr, season, through_week):
         """Get current season stats"""
@@ -142,6 +152,32 @@ class MasterBettingPredictor:
         home_win_prob = self.ml_predictor.model.predict_proba(features)[0][1]
 
         return home_win_prob
+
+    def _build_feature_row(self, home_team, away_team, season, week):
+        """Build the feature row shared by the win and margin models."""
+        home_stats = self.get_team_current_stats(home_team, season, week)
+        away_stats = self.get_team_current_stats(away_team, season, week)
+
+        home_games = home_stats['wins'] + home_stats['losses']
+        away_games = away_stats['wins'] + away_stats['losses']
+
+        return pd.DataFrame([{
+            'home_wins': home_stats['wins'],
+            'home_losses': home_stats['losses'],
+            'home_win_pct': home_stats['wins'] / max(home_games, 1),
+            'home_avg_points_scored': home_stats['avg_points_scored'],
+            'home_avg_points_allowed': home_stats['avg_points_allowed'],
+            'away_wins': away_stats['wins'],
+            'away_losses': away_stats['losses'],
+            'away_win_pct': away_stats['wins'] / max(away_games, 1),
+            'away_avg_points_scored': away_stats['avg_points_scored'],
+            'away_avg_points_allowed': away_stats['avg_points_allowed']
+        }])
+
+    def get_ml_margin_for_game(self, home_team, away_team, season, week):
+        """Trained model's predicted home scoring margin (positive = home favored)."""
+        features = self._build_feature_row(home_team, away_team, season, week)
+        return self.ml_predictor.predict_margin(features)
     
     def fetch_draftkings_lines(self):
         """Fetch current DraftKings lines"""
@@ -174,7 +210,8 @@ class MasterBettingPredictor:
             'DEN': 'Denver Broncos', 'DET': 'Detroit Lions', 'GB': 'Green Bay Packers',
             'HOU': 'Houston Texans', 'IND': 'Indianapolis Colts', 'JAX': 'Jacksonville Jaguars',
             'KC': 'Kansas City Chiefs', 'LV': 'Las Vegas Raiders', 'LAC': 'Los Angeles Chargers',
-            'LA': 'Los Angeles Rams', 'MIA': 'Miami Dolphins', 'MIN': 'Minnesota Vikings',
+            'LAR': 'Los Angeles Rams', 'LA': 'Los Angeles Rams', 'MIA': 'Miami Dolphins',
+            'MIN': 'Minnesota Vikings',
             'NE': 'New England Patriots', 'NO': 'New Orleans Saints', 'NYG': 'New York Giants',
             'NYJ': 'New York Jets', 'PHI': 'Philadelphia Eagles', 'PIT': 'Pittsburgh Steelers',
             'SF': 'San Francisco 49ers', 'SEA': 'Seattle Seahawks', 'TB': 'Tampa Bay Buccaneers',
@@ -204,64 +241,61 @@ class MasterBettingPredictor:
     
     def calculate_comprehensive_prediction(self, home_team, away_team, season, week):
         """
-        Master prediction combining all factors:
-        1. ML Model (trained on 2022-2024)
-        2. Current season performance
-        3. Historical trends
-        4. Injury impact (weighted by snap counts)
-        5. Home field advantage
-        
-        Returns prediction with BOTH point margin and betting line format
+        Master prediction.
+
+        The point spread comes from a trained margin regressor (home margin =
+        home_score - away_score, learned from 2022-2024+ results, which already
+        captures home-field advantage and team strength). An injury adjustment
+        is layered on top because injury data is not part of the model's
+        features.
+
+        Returns prediction with BOTH point margin and betting line format.
         """
-        
+
         home_current = self.get_team_current_stats(home_team, season, week)
         away_current = self.get_team_current_stats(away_team, season, week)
-        
+
         home_historical = self.get_historical_performance(home_team)
         away_historical = self.get_historical_performance(away_team)
-        
+
         ml_home_win_prob = self.get_ml_prediction_for_game(home_team, away_team, season, week)
-        
+        ml_margin = self.get_ml_margin_for_game(home_team, away_team, season, week)
+
         home_injury = self.injury_analyzer.get_team_injury_impact(home_team, season, week)
         away_injury = self.injury_analyzer.get_team_injury_impact(away_team, season, week)
-        
-        prediction_components = {}
-        
-        ml_spread_contribution = (ml_home_win_prob - 0.5) * 20
-        prediction_components['ml_model'] = ml_spread_contribution
 
-        home_games = int(home_current['wins']) + int(home_current['losses'])
-        away_games = int(away_current['wins']) + int(away_current['losses'])
-        current_record_diff = (int(home_current['wins'])/max(home_games, 1)) - (int(away_current['wins'])/max(away_games, 1))
-        prediction_components['current_record'] = current_record_diff * 8
-
-        prediction_components['historical_trend'] = (float(home_historical['historical_win_pct']) - float(away_historical['historical_win_pct'])) * 5
-
-        prediction_components['offensive_power'] = (float(home_current['avg_points_scored']) - float(away_current['avg_points_scored'])) * 0.3
-
-        prediction_components['defensive_strength'] = (float(away_current['avg_points_allowed']) - float(home_current['avg_points_allowed'])) * 0.3
- 
+        # Injury adjustment: if the away team is more banged up, the home margin
+        # grows. 0.1 pt per point of impact-score differential.
         injury_diff = float(away_injury['total_impact']) - float(home_injury['total_impact'])
-        prediction_components['injury_impact'] = injury_diff * 0.3
-        
-        prediction_components['home_field'] = 2.5
-        
-        predicted_margin = sum(prediction_components.values())
-        
+        injury_adjustment = injury_diff * 0.1
+
+        prediction_components = {
+            'ml_predicted_margin': ml_margin,
+            'injury_adjustment': injury_adjustment,
+        }
+
+        predicted_margin = ml_margin + injury_adjustment
+
+        # Betting-line convention: negative = home favored.
         model_betting_line = -predicted_margin
-        
+
+        # Confidence reflects how decisive the trained signals are.
         confidence_score = 0
-        if abs(ml_spread_contribution) > 5:
-            confidence_score += 30
-        if abs(prediction_components['current_record']) > 3:
-            confidence_score += 25
-        if abs(injury_diff) > 15:
+        if abs(ml_margin) > 7:
+            confidence_score += 35
+        elif abs(ml_margin) > 3:
             confidence_score += 20
-        if abs(prediction_components['offensive_power']) > 3:
+
+        if abs(ml_home_win_prob - 0.5) > 0.20:
+            confidence_score += 35
+        elif abs(ml_home_win_prob - 0.5) > 0.10:
+            confidence_score += 20
+
+        if abs(injury_adjustment) > 2:
             confidence_score += 15
-        if abs(prediction_components['defensive_strength']) > 3:
+        elif abs(injury_adjustment) > 1:
             confidence_score += 10
-        
+
         if confidence_score >= 70:
             confidence = 'HIGH'
         elif confidence_score >= 45:
