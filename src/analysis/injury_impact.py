@@ -1,16 +1,15 @@
 import sys
 import os
-from datetime import datetime
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from database.db_manager import DatabaseManager
+from utils.nfl_week import get_current_nfl_week
 
 class InjuryImpactAnalyzer:
-    
+
     def __init__(self):
         self.db = DatabaseManager()
-        self.MIN_SNAP_THRESHOLD = 0.0
-        
+
         self.position_weights = {
             'QB': 1.0,
             'WR': 0.6,
@@ -45,42 +44,8 @@ class InjuryImpactAnalyzer:
         }
     
     def get_current_nfl_week(self):
-        today = datetime.now().date()
-        
-        season_weeks = {
-            1: ("2025-09-05", "2025-09-09"),
-            2: ("2025-09-10", "2025-09-16"),
-            3: ("2025-09-17", "2025-09-23"),
-            4: ("2025-09-24", "2025-09-30"),
-            5: ("2025-10-01", "2025-10-07"),
-            6: ("2025-10-08", "2025-10-14"),
-            7: ("2025-10-15", "2025-10-21"),
-            8: ("2025-10-22", "2025-10-28"),
-            9: ("2025-10-29", "2025-11-04"),
-            10: ("2025-11-05", "2025-11-11"),
-            11: ("2025-11-12", "2025-11-18"),
-            12: ("2025-11-19", "2025-11-25"),
-            13: ("2025-11-26", "2025-12-02"),
-            14: ("2025-12-03", "2025-12-09"),
-            15: ("2025-12-10", "2025-12-16"),
-            16: ("2025-12-17", "2025-12-23"),
-            17: ("2025-12-24", "2025-12-30"),
-            18: ("2025-12-31", "2026-01-05"),
-        }
-        
-        for week, (start_str, end_str) in season_weeks.items():
-            start = datetime.strptime(start_str, "%Y-%m-%d").date()
-            end = datetime.strptime(end_str, "%Y-%m-%d").date()
-            
-            if start <= today <= end:
-                return week
-        
-        last_week_end = datetime.strptime(season_weeks[18][1], "%Y-%m-%d").date()
-        if today > last_week_end:
-            return 18
-        
-        return 1
-    
+        return get_current_nfl_week()
+
     def get_player_importance(self, player_id):
         query = """
             SELECT AVG(snap_percentage) as avg_snaps, MIN(depth_order) as depth
@@ -170,56 +135,39 @@ class InjuryImpactAnalyzer:
         
         processed_injuries = []
         total_impact = 0
-        skipped_count = 0
         critical_injuries = []
-        
+
         for injury in injuries:
             player_id = injury['player_id']
             position = injury['position']
             status = injury['injury_status']
             player_name = injury['player_name']
-            
-            snap_query = """
-                SELECT AVG(snap_percentage) as avg_snaps
-                FROM depth_charts
-                WHERE player_id = %s
-                AND snap_percentage > 0
-            """
-            snap_result = self.db.execute_query(snap_query, (player_id,))
-            
-            if snap_result and snap_result[0]['avg_snaps']:
-                avg_snaps = float(snap_result[0]['avg_snaps']) / 100.0
-            else:
-                avg_snaps = 0.0
-            
-            if avg_snaps < self.MIN_SNAP_THRESHOLD:
-                skipped_count += 1
-                continue
-            
+
+            # calculate_injury_impact() already factors in snap share via
+            # get_player_importance(), so there is no separate snap lookup here.
             impact_score = self.calculate_injury_impact(player_id, position, status)
-            
+
             injury_data = {
                 'player': player_name,
                 'position': position,
                 'status': status,
                 'impact_score': impact_score,
-                'snap_pct': avg_snaps,
                 'week': injury.get('week', week)
             }
-            
+
             processed_injuries.append(injury_data)
             total_impact += impact_score
-            
+
             if impact_score >= 5.0:
                 critical_injuries.append(injury_data)
-        
+
         processed_injuries.sort(key=lambda x: x['impact_score'], reverse=True)
-        
+
         return {
             'team': team_abbr,
             'total_impact': round(total_impact, 1),
             'injury_count': len(processed_injuries),
-            'skipped_inactive': skipped_count,
+            'skipped_inactive': 0,
             'critical_injuries': critical_injuries,
             'injuries': processed_injuries
         }
