@@ -41,7 +41,8 @@ class SchemaV2Migration:
         print("STEP 2: CREATING NEW V2 TABLES")
         print("="*70)
         
-        with open('src/database/schema_v2_multi_season.sql', 'r') as f:
+        schema_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'schema')
+        with open(schema_path, 'r') as f:
             schema_sql = f.read()
         
         statements = [s.strip() for s in schema_sql.split(';') if s.strip()]

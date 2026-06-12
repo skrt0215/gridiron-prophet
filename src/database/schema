@@ -177,3 +177,85 @@ CREATE TABLE IF NOT EXISTS player_game_stats (
     INDEX idx_player_season (player_id, season),
     INDEX idx_game_id (game_id)
 );
+
+CREATE TABLE IF NOT EXISTS predictions (
+    prediction_id INT PRIMARY KEY AUTO_INCREMENT,
+    season INT NOT NULL,
+    week INT NOT NULL,
+    game_id INT NOT NULL,
+    home_team VARCHAR(10) NOT NULL,
+    away_team VARCHAR(10) NOT NULL,
+    predicted_home_score DECIMAL(5,1),
+    predicted_away_score DECIMAL(5,1),
+    predicted_winner VARCHAR(10),
+    model_spread DECIMAL(5,1),
+    confidence VARCHAR(10),
+    recommended_bet VARCHAR(50),
+    edge DECIMAL(5,1),
+    prediction_date DATETIME,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (game_id) REFERENCES games(game_id) ON DELETE CASCADE,
+    UNIQUE KEY unique_prediction (season, week, game_id),
+    INDEX idx_season_week (season, week)
+);
+
+CREATE TABLE IF NOT EXISTS weekly_accuracy (
+    weekly_accuracy_id INT PRIMARY KEY AUTO_INCREMENT,
+    season INT NOT NULL,
+    week INT NOT NULL,
+    total_predictions INT DEFAULT 0,
+    correct_predictions INT DEFAULT 0,
+    accuracy_pct DECIMAL(5,2),
+    spread_3pt_accuracy DECIMAL(5,2),
+    spread_7pt_accuracy DECIMAL(5,2),
+    avg_margin_error DECIMAL(5,2),
+    high_conf_total INT DEFAULT 0,
+    high_conf_correct INT DEFAULT 0,
+    calculated_date DATETIME,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY unique_week (season, week),
+    INDEX idx_season (season)
+);
+
+CREATE TABLE IF NOT EXISTS prediction_log (
+    prediction_id INT PRIMARY KEY AUTO_INCREMENT,
+    season INT NOT NULL,
+    week INT NOT NULL,
+    home_team_id INT NOT NULL,
+    away_team_id INT NOT NULL,
+    predicted_spread DECIMAL(5,1),
+    vegas_spread DECIMAL(5,1),
+    edge DECIMAL(5,1),
+    confidence_level VARCHAR(10),
+    recommendation VARCHAR(100),
+    bet_amount DECIMAL(8,2),
+    game_date DATE,
+    actual_home_score INT,
+    actual_away_score INT,
+    actual_spread DECIMAL(5,1),
+    bet_result VARCHAR(10),
+    profit_loss DECIMAL(10,2),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (home_team_id) REFERENCES teams(team_id),
+    FOREIGN KEY (away_team_id) REFERENCES teams(team_id),
+    INDEX idx_season_week (season, week),
+    INDEX idx_bet_result (bet_result)
+);
+
+CREATE TABLE IF NOT EXISTS roi_summary (
+    roi_summary_id INT PRIMARY KEY AUTO_INCREMENT,
+    season INT NOT NULL,
+    week INT,
+    total_bets INT DEFAULT 0,
+    winning_bets INT DEFAULT 0,
+    losing_bets INT DEFAULT 0,
+    push_bets INT DEFAULT 0,
+    total_wagered DECIMAL(12,2) DEFAULT 0.00,
+    total_profit_loss DECIMAL(12,2) DEFAULT 0.00,
+    roi_percentage DECIMAL(6,2),
+    win_rate DECIMAL(5,2),
+    avg_edge DECIMAL(5,1),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY unique_roi (season, week),
+    INDEX idx_season (season)
+);
