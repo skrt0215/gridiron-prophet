@@ -5,6 +5,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import requests
 from datetime import datetime
 from database.db_manager import DatabaseManager
+from config.season import CURRENT_SEASON, get_current_week
 
 class NFLGameFetcher:
     
@@ -16,7 +17,7 @@ class NFLGameFetcher:
         team = self.db.get_team_by_abbreviation(abbr)
         return team['team_id'] if team else None
     
-    def fetch_scoreboard(self, season=2025, week=None):
+    def fetch_scoreboard(self, season=CURRENT_SEASON, week=None):
         url = f"{self.base_url}/scoreboard"
         
         params = {}
@@ -140,55 +141,20 @@ class NFLGameFetcher:
         return added_count
 
 def get_current_nfl_week() -> int:
-    SEASON_2025_WEEKS = {
-        1: ("2025-09-05", "2025-09-09"),
-        2: ("2025-09-10", "2025-09-16"),
-        3: ("2025-09-17", "2025-09-23"),
-        4: ("2025-09-24", "2025-09-30"),
-        5: ("2025-10-01", "2025-10-07"),
-        6: ("2025-10-08", "2025-10-14"),
-        7: ("2025-10-15", "2025-10-21"),
-        8: ("2025-10-22", "2025-10-28"),
-        9: ("2025-10-29", "2025-11-04"),
-        10: ("2025-11-05", "2025-11-11"),
-        11: ("2025-11-12", "2025-11-18"),
-        12: ("2025-11-19", "2025-11-25"),
-        13: ("2025-11-26", "2025-12-02"),
-        14: ("2025-12-03", "2025-12-09"),
-        15: ("2025-12-10", "2025-12-16"),
-        16: ("2025-12-17", "2025-12-23"),
-        17: ("2025-12-24", "2025-12-30"),
-        18: ("2025-12-31", "2026-01-05"),
-    }
-    
     try:
-        today = datetime.now().date()
-        
-        for week, (start_str, end_str) in SEASON_2025_WEEKS.items():
-            start = datetime.strptime(start_str, "%Y-%m-%d").date()
-            end = datetime.strptime(end_str, "%Y-%m-%d").date()
-            
-            if start <= today <= end:
-                return week
-        
-        last_week_end = datetime.strptime(SEASON_2025_WEEKS[18][1], "%Y-%m-%d").date()
-        if today > last_week_end:
-            return 18
-        
-        return 1
-        
+        return get_current_week()
     except Exception as e:
         print(f"⚠️  Error getting current week: {e}")
-        return 10
+        return 1
 
 def main():
     fetcher = NFLGameFetcher()
-    
+
     print("=" * 60)
     print("NFL Game Data Fetcher")
     print("=" * 60)
-    
-    season = 2025
+
+    season = CURRENT_SEASON
     current_week = get_current_nfl_week()
     completed_week = current_week - 1
     

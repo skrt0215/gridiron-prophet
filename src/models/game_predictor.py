@@ -3,6 +3,7 @@ import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from database.db_manager import DatabaseManager
+from config.season import CURRENT_SEASON, TRAINING_SEASONS
 import pandas as pd
 import numpy as np
 from sklearn.ensemble import RandomForestClassifier
@@ -20,20 +21,21 @@ class NFLGamePredictor:
         self.model = None
         self.feature_columns = None
     
-    def fetch_training_data(self, seasons, max_week_2025=None):
+    def fetch_training_data(self, seasons, max_week=None):
         """
         Fetch historical game data for training
-        
+
         Args:
-            seasons: List of seasons (e.g., [2022, 2023, 2024, 2025])
-            max_week_2025: Only include 2025 games up to this week
+            seasons: List of seasons to include
+            max_week: For the current season, only include games up to this week
         """
         print("Fetching game data from database...")
         where_clauses = [f"g.season IN ({','.join(['%s'] * len(seasons))})"]
         params = list(seasons)
-        if max_week_2025 and 2025 in seasons:
-            where_clauses.append("(g.season < 2025 OR g.week <= %s)")
-            params.append(max_week_2025)
+        if max_week and CURRENT_SEASON in seasons:
+            where_clauses.append("(g.season < %s OR g.week <= %s)")
+            params.append(CURRENT_SEASON)
+            params.append(max_week)
         where_clauses.append("g.game_status = 'Final'")
         query = f"""
             SELECT 
@@ -125,21 +127,21 @@ class NFLGamePredictor:
         
         return pd.DataFrame(features_list)
     
-    def train_model(self, seasons, max_week_2025=None):
+    def train_model(self, seasons, max_week=None):
         """
         Train the prediction model
-        
+
         Args:
-            seasons: List of seasons to train on (e.g., [2022, 2023, 2024, 2025])
-            max_week_2025: For 2025, only include games up to this week (for weekly updates)
+            seasons: List of seasons to train on
+            max_week: For the current season, only include games up to this week
         """
         print("=" * 70)
         print("TRAINING NFL GAME PREDICTION MODEL")
         print("=" * 70)
-        
-        if max_week_2025:
-            print(f"Including 2025 games through Week {max_week_2025}")
-        games_df = self.fetch_training_data(seasons, max_week_2025)
+
+        if max_week:
+            print(f"Including {CURRENT_SEASON} games through Week {max_week}")
+        games_df = self.fetch_training_data(seasons, max_week)
         features_df = self.calculate_team_stats(games_df)
         features_df = features_df[features_df['week'] > 1].copy()
         print(f"\nUsing {len(features_df)} games for training")
@@ -256,7 +258,7 @@ class NFLGamePredictor:
 
 if __name__ == "__main__":
     predictor = NFLGamePredictor()
-    accuracy = predictor.train_model([2022, 2023, 2024])
+    accuracy = predictor.train_model(TRAINING_SEASONS)
     predictor.save_model()
     print("\n" + "=" * 70)
     print("Training complete! Model ready for predictions.")

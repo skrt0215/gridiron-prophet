@@ -10,45 +10,12 @@ project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 from src.database.db_manager import DatabaseManager
-
-SEASON_2025_WEEKS = {
-    1: ("2025-09-05", "2025-09-09"),
-    2: ("2025-09-10", "2025-09-16"),
-    3: ("2025-09-17", "2025-09-23"),
-    4: ("2025-09-24", "2025-09-30"),
-    5: ("2025-10-01", "2025-10-07"),
-    6: ("2025-10-08", "2025-10-14"),
-    7: ("2025-10-15", "2025-10-21"),
-    8: ("2025-10-22", "2025-10-28"),
-    9: ("2025-10-29", "2025-11-04"),
-    10: ("2025-11-05", "2025-11-11"),
-    11: ("2025-11-12", "2025-11-18"),
-    12: ("2025-11-19", "2025-11-25"),
-    13: ("2025-11-26", "2025-12-02"),
-    14: ("2025-12-03", "2025-12-09"),
-    15: ("2025-12-10", "2025-12-16"),
-    16: ("2025-12-17", "2025-12-23"),
-    17: ("2025-12-24", "2025-12-30"),
-    18: ("2025-12-31", "2026-01-05"),
-}
+from src.config.season import CURRENT_SEASON, get_current_week as season_current_week
 
 ESPN_INJURY_URL = "https://www.espn.com/nfl/injuries"
 
 def get_current_week() -> int:
-    today = datetime.now().date()
-    
-    for week, (start_str, end_str) in SEASON_2025_WEEKS.items():
-        start = datetime.strptime(start_str, "%Y-%m-%d").date()
-        end = datetime.strptime(end_str, "%Y-%m-%d").date()
-        
-        if start <= today <= end:
-            return week
-    
-    last_week_end = datetime.strptime(SEASON_2025_WEEKS[18][1], "%Y-%m-%d").date()
-    if today > last_week_end:
-        return 18
-    
-    return 1
+    return season_current_week()
 
 
 def normalize_player_name(name):
@@ -121,7 +88,7 @@ def fetch_espn_injuries() -> List[Dict]:
                         'injury_status': injury_status,
                         'injury_description': injury_description,
                         'date_reported': datetime.now().strftime('%Y-%m-%d'),
-                        'season': 2025,
+                        'season': CURRENT_SEASON,
                         'week': get_current_week()
                     })
         
@@ -147,11 +114,11 @@ def find_player_id(db, player_name, team_id, player_cache):
         SELECT p.player_id
         FROM players p
         JOIN player_seasons ps ON p.player_id = ps.player_id
-        WHERE LOWER(p.name) = %s 
-        AND ps.team_id = %s 
-        AND ps.season = 2025
+        WHERE LOWER(p.name) = %s
+        AND ps.team_id = %s
+        AND ps.season = %s
         LIMIT 1
-    """, (normalized_name, team_id))
+    """, (normalized_name, team_id, CURRENT_SEASON))
     
     player_id = result[0]['player_id'] if result else None
     player_cache[cache_key] = player_id
@@ -183,8 +150,8 @@ def update_injuries_smart(db: DatabaseManager, injuries: List[Dict]) -> Dict[str
         JOIN players p ON i.player_id = p.player_id
         LEFT JOIN player_seasons ps ON i.player_id = ps.player_id AND i.season = ps.season
         LEFT JOIN teams t ON ps.team_id = t.team_id
-        WHERE i.season = 2025
-    """)
+        WHERE i.season = %s
+    """, (CURRENT_SEASON,))
     
     existing_map = {
         (row['name'], row['abbreviation']): {

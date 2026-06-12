@@ -5,6 +5,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from database.db_manager import DatabaseManager
 from analysis.injury_impact import InjuryImpactAnalyzer
 from models.game_predictor import NFLGamePredictor
+from config.season import CURRENT_SEASON, TRAINING_SEASONS, get_current_week
 import requests
 import pandas as pd
 import numpy as np
@@ -30,20 +31,21 @@ class MasterBettingPredictor:
         self.odds_api_key = os.getenv('ODDS_API_KEY')
         self.ml_trained = False
         
-    def train_ml_model(self, max_week_2025=None):
+    def train_ml_model(self, max_week=None):
         """
         Train ML model on historical data if not already trained
-        
+
         Args:
-            max_week_2025: If provided, includes 2025 games up to this week
+            max_week: If provided, includes the current season up to this week
         """
+        completed_seasons = [s for s in TRAINING_SEASONS if s != CURRENT_SEASON]
         if not self.ml_trained:
-            if max_week_2025:
-                print(f"\n🤖 Training ML Model on 2022-2024 + 2025 (through Week {max_week_2025})...")
-                self.ml_predictor.train_model([2022, 2023, 2024, 2025], max_week_2025=max_week_2025)
+            if max_week:
+                print(f"\n🤖 Training ML Model on {TRAINING_SEASONS} (through Week {max_week} of {CURRENT_SEASON})...")
+                self.ml_predictor.train_model(TRAINING_SEASONS, max_week=max_week)
             else:
-                print("\n🤖 Training ML Model on Historical Data (2022-2024)...")
-                self.ml_predictor.train_model([2022, 2023, 2024])
+                print(f"\n🤖 Training ML Model on completed seasons {completed_seasons}...")
+                self.ml_predictor.train_model(completed_seasons)
             self.ml_trained = True
             print("✓ ML Model Ready\n")
     
@@ -79,8 +81,10 @@ class MasterBettingPredictor:
         
         return {'wins': 0, 'losses': 0, 'avg_points_scored': 0.0, 'avg_points_allowed': 0.0}
     
-    def get_historical_performance(self, team_abbr, seasons=[2022, 2023, 2024]):
+    def get_historical_performance(self, team_abbr, seasons=None):
         """Get team's historical performance trends"""
+        if seasons is None:
+            seasons = [s for s in TRAINING_SEASONS if s != CURRENT_SEASON]
         query = """
             SELECT 
                 g.season,
@@ -488,8 +492,9 @@ class MasterBettingPredictor:
 
 if __name__ == "__main__":
     predictor = MasterBettingPredictor()
-    completed_week = 6
-    if completed_week:
-        print(f"📊 Using 2025 data through Week {completed_week} for training")
-        predictor.train_ml_model(max_week_2025=completed_week)
-    predictor.analyze_week(season=2025, week=7)
+    current_week = get_current_week()
+    completed_week = current_week - 1
+    if completed_week > 0:
+        print(f"📊 Using {CURRENT_SEASON} data through Week {completed_week} for training")
+        predictor.train_ml_model(max_week=completed_week)
+    predictor.analyze_week(season=CURRENT_SEASON, week=current_week)

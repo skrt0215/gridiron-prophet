@@ -8,6 +8,7 @@ project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
 
 from src.database.db_manager import DatabaseManager
+from src.config.season import CURRENT_SEASON, get_current_week
 
 
 def print_header(title: str):
@@ -44,43 +45,8 @@ def run_script(script_path: Path, description: str) -> bool:
 
 
 def get_current_nfl_week() -> int:
-    SEASON_2025_WEEKS = {
-        1: ("2025-09-05", "2025-09-09"),
-        2: ("2025-09-10", "2025-09-16"),
-        3: ("2025-09-17", "2025-09-23"),
-        4: ("2025-09-24", "2025-09-30"),
-        5: ("2025-10-01", "2025-10-07"),
-        6: ("2025-10-08", "2025-10-14"),
-        7: ("2025-10-15", "2025-10-21"),
-        8: ("2025-10-22", "2025-10-28"),
-        9: ("2025-10-29", "2025-11-04"),
-        10: ("2025-11-05", "2025-11-11"),
-        11: ("2025-11-12", "2025-11-18"),
-        12: ("2025-11-19", "2025-11-25"),
-        13: ("2025-11-26", "2025-12-02"),
-        14: ("2025-12-03", "2025-12-09"),
-        15: ("2025-12-10", "2025-12-16"),
-        16: ("2025-12-17", "2025-12-23"),
-        17: ("2025-12-24", "2025-12-30"),
-        18: ("2025-12-31", "2026-01-05"),
-    }
-    
     try:
-        today = datetime.now().date()
-        
-        for week, (start_str, end_str) in SEASON_2025_WEEKS.items():
-            start = datetime.strptime(start_str, "%Y-%m-%d").date()
-            end = datetime.strptime(end_str, "%Y-%m-%d").date()
-            
-            if start <= today <= end:
-                return week
-        
-        last_week_end = datetime.strptime(SEASON_2025_WEEKS[18][1], "%Y-%m-%d").date()
-        if today > last_week_end:
-            return 18
-        
-        return 1
-        
+        return get_current_week()
     except Exception as e:
         print(f"⚠️  Error getting current week from date: {e}")
         db = DatabaseManager()
@@ -88,9 +54,9 @@ def get_current_nfl_week() -> int:
             result = db.execute_query("""
                 SELECT MAX(week) AS max_week
                 FROM games
-                WHERE season = 2025
+                WHERE season = %s
                 AND home_score IS NOT NULL
-            """)
+            """, (CURRENT_SEASON,))
             completed_week = result[0]['max_week'] if result and result[0]['max_week'] else 0
             return completed_week + 1
         except Exception as inner_e:
@@ -103,27 +69,27 @@ def verify_data_quality(db: DatabaseManager, current_week: int) -> dict:
     
     games_result = db.execute_query("""
         SELECT COUNT(*) as count
-        FROM games 
-        WHERE season = 2025 
+        FROM games
+        WHERE season = %s
         AND week = %s
         AND home_score IS NOT NULL
-    """, (current_week - 1,))
+    """, (CURRENT_SEASON, current_week - 1))
     games_count = games_result[0]['count'] if games_result else 0
-    
+
     injuries_result = db.execute_query("""
         SELECT COUNT(*) as count
-        FROM injuries 
-        WHERE season = 2025 
+        FROM injuries
+        WHERE season = %s
         AND week = %s
-    """, (current_week,))
+    """, (CURRENT_SEASON, current_week))
     injuries_count = injuries_result[0]['count'] if injuries_result else 0
-    
+
     upcoming_result = db.execute_query("""
         SELECT COUNT(*) as count
-        FROM games 
-        WHERE season = 2025 
+        FROM games
+        WHERE season = %s
         AND week = %s
-    """, (current_week,))
+    """, (CURRENT_SEASON, current_week))
     upcoming_count = upcoming_result[0]['count'] if upcoming_result else 0
     
     quality = {
@@ -182,7 +148,7 @@ def main():
         try:
             result = subprocess.run(
                 [sys.executable, str(src_dir / 'analysis' / 'calculate_weekly_accuracy.py'),
-                 '--season', '2025', '--week', str(previous_week)],
+                 '--season', str(CURRENT_SEASON), '--week', str(previous_week)],
                 capture_output=False,
                 text=True,
                 cwd=project_root
@@ -275,7 +241,7 @@ def main():
     print("  - Track ROI after games complete:")
     print("    python src/betting/roi_tracker.py")
     print("  - View season accuracy trend:")
-    print("    python src/analysis/calculate_weekly_accuracy.py --season 2025 --view --detailed")
+    print(f"    python src/analysis/calculate_weekly_accuracy.py --season {CURRENT_SEASON} --view --detailed")
     
     print("\n" + "="*70)
     print("✨ Weekly Update Complete! Good luck this week! ✨")

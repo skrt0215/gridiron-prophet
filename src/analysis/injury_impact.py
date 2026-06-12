@@ -1,9 +1,9 @@
 import sys
 import os
-from datetime import datetime
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from database.db_manager import DatabaseManager
+from config.season import CURRENT_SEASON, get_current_week
 
 class InjuryImpactAnalyzer:
     
@@ -45,42 +45,8 @@ class InjuryImpactAnalyzer:
         }
     
     def get_current_nfl_week(self):
-        today = datetime.now().date()
-        
-        season_weeks = {
-            1: ("2025-09-05", "2025-09-09"),
-            2: ("2025-09-10", "2025-09-16"),
-            3: ("2025-09-17", "2025-09-23"),
-            4: ("2025-09-24", "2025-09-30"),
-            5: ("2025-10-01", "2025-10-07"),
-            6: ("2025-10-08", "2025-10-14"),
-            7: ("2025-10-15", "2025-10-21"),
-            8: ("2025-10-22", "2025-10-28"),
-            9: ("2025-10-29", "2025-11-04"),
-            10: ("2025-11-05", "2025-11-11"),
-            11: ("2025-11-12", "2025-11-18"),
-            12: ("2025-11-19", "2025-11-25"),
-            13: ("2025-11-26", "2025-12-02"),
-            14: ("2025-12-03", "2025-12-09"),
-            15: ("2025-12-10", "2025-12-16"),
-            16: ("2025-12-17", "2025-12-23"),
-            17: ("2025-12-24", "2025-12-30"),
-            18: ("2025-12-31", "2026-01-05"),
-        }
-        
-        for week, (start_str, end_str) in season_weeks.items():
-            start = datetime.strptime(start_str, "%Y-%m-%d").date()
-            end = datetime.strptime(end_str, "%Y-%m-%d").date()
-            
-            if start <= today <= end:
-                return week
-        
-        last_week_end = datetime.strptime(season_weeks[18][1], "%Y-%m-%d").date()
-        if today > last_week_end:
-            return 18
-        
-        return 1
-    
+        return get_current_week()
+
     def get_player_importance(self, player_id):
         query = """
             SELECT AVG(snap_percentage) as avg_snaps, MIN(depth_order) as depth
@@ -136,7 +102,7 @@ class InjuryImpactAnalyzer:
         impact = position_weight * severity * player_importance * 10
         return round(impact, 2)
     
-    def get_team_injury_impact(self, team_abbr, season=2025, week=None):
+    def get_team_injury_impact(self, team_abbr, season=CURRENT_SEASON, week=None):
         if week is None:
             week = self.get_current_nfl_week()
             
@@ -224,7 +190,7 @@ class InjuryImpactAnalyzer:
             'injuries': processed_injuries
         }
     
-    def compare_matchup_injuries(self, home_team, away_team, season=2025, week=None):
+    def compare_matchup_injuries(self, home_team, away_team, season=CURRENT_SEASON, week=None):
         if week is None:
             week = self.get_current_nfl_week()
             
@@ -264,7 +230,7 @@ class InjuryImpactAnalyzer:
             print(f"INJURY ADVANTAGE: {home_team} by {abs(advantage):.1f} points")
         print("="*70)
     
-    def generate_weekly_injury_report(self, season=2025, week=None):
+    def generate_weekly_injury_report(self, season=CURRENT_SEASON, week=None):
         if week is None:
             week = self.get_current_nfl_week()
             
