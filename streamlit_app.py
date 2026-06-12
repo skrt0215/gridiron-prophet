@@ -1,16 +1,51 @@
 import streamlit as st
 import sys
 import os
+import hmac
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
+from dotenv import load_dotenv
+load_dotenv('config/.env')
 
 from src.models.master_betting_predictor import MasterBettingPredictor
 from src.analysis.injury_impact import InjuryImpactAnalyzer
 from src.database.db_manager import DatabaseManager
+from src.utils.nfl_week import get_current_nfl_week
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 
 st.set_page_config(page_title="Gridiron Prophet", page_icon="🏈", layout="wide", initial_sidebar_state="collapsed")
+
+
+def require_login():
+    """Gate the app behind GRIDIRON_ACCESS_PASSWORD.
+
+    Refuses to load if no password is configured, so the app is never exposed
+    without protection.
+    """
+    expected = os.getenv("GRIDIRON_ACCESS_PASSWORD")
+    if not expected:
+        st.error("🔒 Access is not configured. Set the GRIDIRON_ACCESS_PASSWORD "
+                 "environment variable (e.g. in config/.env) before launching.")
+        st.stop()
+
+    if st.session_state.get("authenticated"):
+        return
+
+    st.markdown("### 🔒 Gridiron Prophet")
+    password = st.text_input("Enter access password", type="password")
+    if not password:
+        st.stop()
+    if hmac.compare_digest(password, expected):
+        st.session_state.authenticated = True
+        st.rerun()
+    else:
+        st.error("Incorrect password.")
+        st.stop()
+
+
+require_login()
 
 @st.cache_resource
 def load_predictor():
@@ -316,7 +351,7 @@ if 'recommendations' not in st.session_state:
 if 'current_season' not in st.session_state:
     st.session_state.current_season = 2025
 if 'current_week' not in st.session_state:
-    st.session_state.current_week = 6
+    st.session_state.current_week = get_current_nfl_week()
 
 tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["📊 THIS WEEK", "🏥 INJURIES", "⚔️ MATCHUP", "👥 ROSTERS", "📈 STATS", "❓ FAQ"])
 
@@ -959,16 +994,16 @@ with tab6:
         st.markdown(f"""
         ### Machine Learning Component
         - **Training Data**: 800+ NFL games (2022-2024)
-        - **Algorithm**: Random Forest Classifier
+        - **Algorithms**: Random Forest win classifier + Random Forest margin
+          regressor (the spread is a *trained* prediction of the scoring margin,
+          which captures home-field advantage from the data itself)
         - **Current Accuracy**: {get_overall_accuracy_display()}
         - **Updates**: Every Tuesday with new results
-        
+
         ### Key Factors Analyzed
-        1. Team performance metrics (home/away splits)
-        2. Injury impact scores (position-weighted)
-        3. Historical matchups
-        4. Home field advantage (2.5 pts)
-        
+        1. Team performance metrics (records, points scored/allowed)
+        2. Injury impact scores (added on top of the model's spread)
+
         ### Output
         - Model Spread (our prediction)
         - Win Probability
