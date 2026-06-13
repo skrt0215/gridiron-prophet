@@ -30,6 +30,7 @@ class MasterBettingPredictor:
         self.ml_predictor = NFLGamePredictor()
         self.odds_api_key = os.getenv('ODDS_API_KEY')
         self.ml_trained = False
+        self.holdout_accuracy = None
         
     def train_ml_model(self, max_week=None):
         """
@@ -47,6 +48,7 @@ class MasterBettingPredictor:
                 print(f"\n🤖 Training ML Model on completed seasons {completed_seasons}...")
                 self.ml_predictor.train_model(completed_seasons)
             self.ml_trained = True
+            self.holdout_accuracy = self.ml_predictor.last_accuracy
             print("✓ ML Model Ready\n")
     
     def get_team_current_stats(self, team_abbr, season, through_week):

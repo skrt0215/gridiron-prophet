@@ -20,6 +20,7 @@ class NFLGamePredictor:
         self.db = DatabaseManager()
         self.model = None
         self.feature_columns = None
+        self.last_accuracy = None
     
     def fetch_training_data(self, seasons, max_week=None):
         """
@@ -193,6 +194,7 @@ class NFLGamePredictor:
         total_games = len(y_test)
         print(f"\nHome Field Advantage in Test Set:")
         print(f"  Home team wins: {home_wins}/{total_games} ({home_wins/total_games:.1%})")
+        self.last_accuracy = accuracy
         return accuracy
     
     def save_model(self, filepath='src/models/spread_model.pkl'):
