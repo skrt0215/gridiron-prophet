@@ -3,9 +3,18 @@ import sys
 import os
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
+try:
+    sys.stdout.reconfigure(encoding='utf-8')
+    sys.stderr.reconfigure(encoding='utf-8')
+except Exception:
+    pass
+
 from src.models.master_betting_predictor import MasterBettingPredictor
 from src.analysis.injury_impact import InjuryImpactAnalyzer
 from src.database.db_manager import DatabaseManager
+from src.config.season import CURRENT_SEASON
+from src.web import vault
+import streamlit.components.v1 as components
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
@@ -28,17 +37,24 @@ def get_injury_analyzer():
 
 @st.cache_data(ttl=3600)
 def get_overall_accuracy_display():
-    """Overall winner-prediction accuracy from stored weekly results, or 'N/A'."""
+    """Honest out-of-sample (holdout) accuracy from the trained model, or 'N/A'."""
     try:
-        rows = get_db().execute_query(
-            "SELECT SUM(correct_predictions) AS correct, "
-            "SUM(total_predictions) AS total FROM weekly_accuracy"
-        )
-        if rows and rows[0]['total']:
-            return f"{rows[0]['correct'] / rows[0]['total'] * 100:.1f}%"
+        acc = load_predictor().holdout_accuracy
+        if acc:
+            return f"{acc * 100:.1f}%"
     except Exception:
         pass
     return "N/A"
+
+@st.cache_data(ttl=900, show_spinner=False)
+def get_hero():
+    """Resolve the slate week and compute the Vault hero payload + accuracy."""
+    predictor = load_predictor()
+    db = get_db()
+    season, week, offseason, label = vault.resolve_slate_week(db, CURRENT_SEASON)
+    payload = vault.build_payload(predictor, db, season, week, offseason, label)
+    accuracy = predictor.holdout_accuracy
+    return payload, accuracy, season, week
 
 st.markdown("""
 <style>
@@ -302,288 +318,26 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.markdown("""
-<div class="main-header">
-    <div class="main-title">🏈 GRIDIRON PROPHET</div>
-    <div class="main-subtitle">Advanced NFL Betting Intelligence System</div>
-</div>
-""", unsafe_allow_html=True)
+st.markdown(vault.shell_css(), unsafe_allow_html=True)
+
+with st.spinner("training model & loading slate..."):
+    hero_payload, hero_accuracy, slate_season, slate_week = get_hero()
+
+components.html(vault.ticker_html(hero_payload), height=48)
 
 if 'predictions_loaded' not in st.session_state:
     st.session_state.predictions_loaded = False
 if 'recommendations' not in st.session_state:
     st.session_state.recommendations = []
 if 'current_season' not in st.session_state:
-    st.session_state.current_season = 2025
+    st.session_state.current_season = slate_season
 if 'current_week' not in st.session_state:
-    st.session_state.current_week = 6
+    st.session_state.current_week = slate_week
 
-tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["📊 THIS WEEK", "🏥 INJURIES", "⚔️ MATCHUP", "👥 ROSTERS", "📈 STATS", "❓ FAQ"])
+tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["THIS WEEK", "INJURIES", "MATCHUP", "ROSTERS", "PERFORMANCE", "MODEL"])
 
 with tab1:
-    col1, col2, col3 = st.columns([2, 1, 1])
-    
-    with col1:
-        st.markdown(f"<div class='section-header'>WEEK {st.session_state.current_week} PREDICTIONS</div>", unsafe_allow_html=True)
-    
-    with col2:
-        st.session_state.current_week = st.number_input("Week", min_value=1, max_value=18, value=st.session_state.current_week, key="week_selector")
-    
-    with col3:
-        if st.button("🔄 REFRESH", use_container_width=True):
-            st.session_state.predictions_loaded = False
-            st.rerun()
-    
-    with st.expander("💡 Quick Reference - Reading Edge Values", expanded=False):
-        col1, col2 = st.columns(2)
-        with col1:
-            st.markdown("""
-            **Negative Edge (-)** 
-            - Model favors HOME team MORE than Vegas
-            - Example: Edge -8.2 = Home team undervalued
-            """)
-        with col2:
-            st.markdown("""
-            **Positive Edge (+)**
-            - Model favors AWAY team MORE than Vegas  
-            - Example: Edge +7.5 = Away team undervalued
-            """)
-    
-    if not st.session_state.predictions_loaded:
-        st.info(f"🔮 Auto-loading Week {st.session_state.current_week} predictions...")
-        with st.spinner("Training model and analyzing games..."):
-            try:
-                predictor = load_predictor()
-                
-                odds_data = predictor.fetch_draftkings_lines()
-                
-                query = """
-                    SELECT g.game_id, ht.abbreviation as home_team, at.abbreviation as away_team
-                    FROM games g
-                    JOIN teams ht ON g.home_team_id = ht.team_id
-                    JOIN teams at ON g.away_team_id = at.team_id
-                    WHERE g.season = %s AND g.week = %s
-                    ORDER BY g.game_date
-                """
-                
-                games = predictor.db.execute_query(query, (st.session_state.current_season, st.session_state.current_week))
-                
-                if games:
-                    recommendations = []
-                    
-                    for game in games:
-                        home = game['home_team']
-                        away = game['away_team']
-                        
-                        prediction = predictor.calculate_comprehensive_prediction(home, away, st.session_state.current_season, st.session_state.current_week)
-                        dk_lines = predictor.parse_odds_for_game(odds_data, home, away) if odds_data else None
-                        
-                        if dk_lines and dk_lines['spread'] is not None:
-                            dk_spread = dk_lines['spread']
-                            edge = prediction['model_betting_line'] - dk_spread
-                            
-                            if abs(edge) >= 3.0:
-                                if edge < 0:
-                                    if dk_spread > 0:
-                                        recommended_bet = f"{home} +{dk_spread}"
-                                    elif dk_spread < 0:
-                                        recommended_bet = f"{home} {dk_spread}"
-                                    else:
-                                        recommended_bet = f"{home} PK"
-                                else:
-                                    if dk_spread < 0:
-                                        recommended_bet = f"{away} +{abs(dk_spread)}"
-                                    elif dk_spread > 0:
-                                        recommended_bet = f"{away} {-dk_spread}"
-                                    else:
-                                        recommended_bet = f"{away} PK"
-                                
-                                recommendations.append({
-                                    'game': f"{away} @ {home}",
-                                    'bet': recommended_bet,
-                                    'edge': edge,
-                                    'confidence': prediction['confidence'],
-                                    'ml_prob': prediction['ml_home_win_probability'],
-                                    'model_betting_line': prediction['model_betting_line'],
-                                    'vegas_spread': dk_spread
-                                })
-                    
-                    st.session_state.recommendations = sorted(recommendations, key=lambda x: abs(x['edge']), reverse=True)
-                    st.session_state.predictions_loaded = True
-                    st.rerun()
-                else:
-                    st.warning(f"No games found for Week {st.session_state.current_week}")
-                    
-            except Exception as e:
-                st.error(f"Error loading predictions: {str(e)}")
-    
-    if st.session_state.predictions_loaded and st.session_state.recommendations:
-        
-        col1, col2, col3, col4 = st.columns(4)
-        
-        with col1:
-            st.markdown(f"""
-            <div class="metric-card">
-                <div class="metric-value">{get_overall_accuracy_display()}</div>
-                <div class="metric-label">Model Accuracy</div>
-            </div>
-            """, unsafe_allow_html=True)
-        
-        with col2:
-            st.markdown(f"""
-            <div class="metric-card">
-                <div class="metric-value">{len(st.session_state.recommendations)}</div>
-                <div class="metric-label">Betting Opportunities</div>
-            </div>
-            """, unsafe_allow_html=True)
-        
-        with col3:
-            high_conf_count = sum(1 for r in st.session_state.recommendations if r['confidence'] == 'HIGH')
-            st.markdown(f"""
-            <div class="metric-card">
-                <div class="metric-value">{high_conf_count}</div>
-                <div class="metric-label">High Confidence</div>
-            </div>
-            """, unsafe_allow_html=True)
-        
-        with col4:
-            max_edge = max([abs(r['edge']) for r in st.session_state.recommendations])
-            st.markdown(f"""
-            <div class="metric-card">
-                <div class="metric-value">{max_edge:.1f}</div>
-                <div class="metric-label">Max Edge (pts)</div>
-            </div>
-            """, unsafe_allow_html=True)
-        
-        st.markdown("<br>", unsafe_allow_html=True)
-        
-        st.markdown(f"### 🎯 {len(st.session_state.recommendations)} Betting Opportunities Found")
-        st.markdown("---")
-        
-        for i, rec in enumerate(st.session_state.recommendations, 1):
-            edge_abs = abs(rec['edge'])
-            
-            if edge_abs >= 10:
-                edge_icon = "🔥"
-                edge_color = "#ef4444"
-            elif edge_abs >= 5:
-                edge_icon = "⚡"
-                edge_color = "#f59e0b"
-            else:
-                edge_icon = "⚠️"
-                edge_color = "#eab308"
-            
-            conf_pct = 95 if rec['confidence'] == 'HIGH' else 75 if rec['confidence'] == 'MEDIUM' else 55
-            
-            game_parts = rec['game'].split(' @ ')
-            away_team = game_parts[0]
-            home_team = game_parts[1] if len(game_parts) > 1 else ''
-            
-            away_logo = f"https://a.espncdn.com/i/teamlogos/nfl/500/{away_team}.png"
-            home_logo = f"https://a.espncdn.com/i/teamlogos/nfl/500/{home_team}.png"
-            
-            with st.container():
-                st.markdown(f"""
-                <div style="background: linear-gradient(135deg, #1e2742 0%, #252d47 100%); 
-                            border-left: 6px solid {edge_color}; 
-                            border-radius: 15px; 
-                            padding: 1.5rem; 
-                            margin-bottom: 1.5rem;
-                            box-shadow: 0 4px 15px rgba(0,0,0,0.3);">
-                </div>
-                """, unsafe_allow_html=True)
-                
-                col_rank, col_logos, col_game, col_edge = st.columns([0.5, 1.5, 3, 1.5])
-                
-                with col_rank:
-                    st.markdown(f"<div style='font-size: 2rem; font-weight: 900; color: white; padding-top: 0.5rem;'>{edge_icon} #{i}</div>", unsafe_allow_html=True)
-                
-                with col_logos:
-                    st.markdown(f"""
-                    <div style="display: flex; align-items: center; gap: 0.5rem; padding-top: 0.5rem;">
-                        <img src="{away_logo}" style="width: 40px; height: 40px; object-fit: contain;" onerror="this.style.display='none'">
-                        <span style="color: #94a3b8; font-size: 1.2rem; font-weight: 700;">@</span>
-                        <img src="{home_logo}" style="width: 40px; height: 40px; object-fit: contain;" onerror="this.style.display='none'">
-                    </div>
-                    """, unsafe_allow_html=True)
-                
-                with col_game:
-                    st.markdown(f"<div style='font-size: 1.8rem; font-weight: 700; color: white; padding-top: 0.5rem;'>{rec['game']}</div>", unsafe_allow_html=True)
-                
-                with col_edge:
-                    st.markdown(f"""
-                    <div style="background: linear-gradient(135deg, {edge_color} 0%, {edge_color}dd 100%);
-                                padding: 0.5rem 1rem;
-                                border-radius: 20px;
-                                text-align: center;
-                                font-weight: 700;
-                                color: white;
-                                margin-top: 0.5rem;">
-                        Edge: {rec['edge']:+.1f} pts
-                    </div>
-                    """, unsafe_allow_html=True)
-                
-                col_bet, col_copy = st.columns([4, 1])
-                
-                with col_bet:
-                    st.markdown(f"""
-                    <div style="background: rgba(74, 222, 128, 0.15);
-                                padding: 1rem;
-                                border-radius: 12px;
-                                text-align: center;
-                                margin: 1rem 0;
-                                border: 2px solid rgba(74, 222, 128, 0.3);">
-                        <span style="font-size: 1.8rem; font-weight: 900; color: #4ade80;">
-                            🎯 BET: {rec['bet']}
-                        </span>
-                    </div>
-                    """, unsafe_allow_html=True)
-                
-                with col_copy:
-                    bet_safe = rec['bet'].replace("\\", "").replace("'", "")
-                    st.markdown(f"""
-                    <button onclick="navigator.clipboard.writeText('{bet_safe}').then(() => {{
-                        this.innerHTML = '✅ Copied!';
-                        setTimeout(() => {{ this.innerHTML = '📋 Copy'; }}, 2000);
-                    }})" 
-                    style="background: linear-gradient(135deg, #0B2265 0%, #1a3a8a 100%);
-                           color: white;
-                           border: none;
-                           padding: 0.8rem 1.5rem;
-                           border-radius: 10px;
-                           font-weight: 700;
-                           cursor: pointer;
-                           width: 100%;
-                           margin-top: 1rem;
-                           font-size: 1rem;
-                           transition: all 0.3s;
-                           box-shadow: 0 4px 10px rgba(11, 34, 101, 0.3);">
-                        📋 Copy
-                    </button>
-                    """, unsafe_allow_html=True)
-                
-                st.progress(conf_pct / 100, text=f"{rec['confidence']} CONFIDENCE - {conf_pct}%")
-                
-                col1, col2, col3, col4 = st.columns(4)
-                
-                with col1:
-                    st.metric("Win Probability", f"{rec['ml_prob']:.1%}")
-                
-                with col2:
-                    st.metric("Model Spread", f"{rec['model_betting_line']:+.1f}")
-                
-                with col3:
-                    st.metric("Vegas Spread", f"{rec['vegas_spread']:+.1f}")
-                
-                with col4:
-                    st.metric("Edge Value", f"{rec['edge']:+.1f} pts")
-                
-                st.markdown("</div>", unsafe_allow_html=True)
-    
-    elif st.session_state.predictions_loaded:
-        st.warning(f"⚠️ No strong betting opportunities found for Week {st.session_state.current_week}")
-        st.info("💡 All games have edges < 3 points. Check back later or try a different week.")
-        st.markdown("**Tip:** Games with small edges aren't worth betting. Our model only recommends bets with significant value.")
+    components.html(vault.slate_html(hero_payload, hero_accuracy), height=860, scrolling=True)
 
 with tab2:
     st.markdown("<div class='section-header'>INJURY ANALYSIS</div>", unsafe_allow_html=True)
