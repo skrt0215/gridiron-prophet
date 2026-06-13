@@ -363,37 +363,28 @@ def slate_html(payload, accuracy_pct):
 """
 
 
+INJURY_PAGE_SIZE = 9
+
+
+def injuries_height():
+    """Fixed iframe height so a full page fits with no inner scrollbar."""
+    return 252 + INJURY_PAGE_SIZE * 47 + 54
+
+
 def injuries_html(impact, label):
-    """Vault-styled injury report panel for one team."""
+    """Vault-styled, paginated injury report panel for one team."""
     injuries = impact.get('injuries', [])
     crit = [x for x in injuries if x['impact_score'] >= 7]
-    mod = [x for x in injuries if 3 <= x['impact_score'] < 7]
-    minor = [x for x in injuries if x['impact_score'] < 3]
 
-    def section(title, items, tone):
-        if not items:
-            return ''
-        rows = []
-        for x in items:
-            rows.append(
-                f'<div class="irow {tone}">'
-                f'<span class="pos">{x["position"]}</span>'
-                f'<span class="pname">{x["player"]}</span>'
-                f'<span class="status">{x["status"]}</span>'
-                f'<span class="impact mono">{x["impact_score"]:.1f}</span>'
-                f'</div>'
-            )
-        return (f'<div class="isec"><div class="ihead {tone}">{title} · {len(items)}</div>'
-                f'{"".join(rows)}</div>')
-
-    if not injuries:
-        body = f'<div class="empty">no reported injuries for {impact["team"]} · {label}</div>'
-    else:
-        body = (section('critical', crit, 'crit')
-                + section('moderate', mod, 'mod')
-                + section('minor', minor, 'min'))
+    rows = []
+    for x in injuries:
+        score = x['impact_score']
+        tone = 'crit' if score >= 7 else 'mod' if score >= 3 else 'min'
+        rows.append({'pos': x['position'], 'player': x['player'],
+                     'status': x['status'], 'impact': round(score, 1), 'tone': tone})
 
     total = impact.get('total_impact', 0)
+    data = json.dumps(rows)
     return f"""
 <style>
   :root {{{_VARS}}}
@@ -402,13 +393,10 @@ def injuries_html(impact, label):
   .mono {{ font-family:var(--mono); font-variant-numeric:tabular-nums; }}
   .eyebrow {{ font-size:11px; color:var(--txt3); letter-spacing:0.07em; text-transform:lowercase; }}
   .team {{ font-size:22px; font-weight:700; margin-top:2px; }}
-  .stats {{ display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin:14px 0 18px; }}
+  .stats {{ display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin:14px 0 16px; }}
   .scell {{ background:var(--panel2); border:1px solid var(--line); border-radius:8px; padding:11px 13px; }}
   .scell .k {{ font-size:10px; color:var(--txt3); text-transform:lowercase; letter-spacing:0.05em; }}
   .scell .v {{ font-family:var(--mono); font-variant-numeric:tabular-nums; font-size:20px; font-weight:700; margin-top:3px; }}
-  .isec {{ margin-bottom:16px; }}
-  .ihead {{ font-size:11px; text-transform:lowercase; letter-spacing:0.06em; padding:0 14px 7px; }}
-  .ihead.crit {{ color:var(--neg); }} .ihead.mod {{ color:var(--warn); }} .ihead.min {{ color:var(--pos); }}
   .irow {{ display:grid; grid-template-columns:54px 1fr auto 56px; gap:12px; align-items:center;
       padding:11px 14px; background:var(--panel); border:1px solid var(--line); border-left:2px solid var(--line);
       border-radius:7px; margin-bottom:5px; }}
@@ -420,6 +408,14 @@ def injuries_html(impact, label):
   .impact {{ text-align:right; font-weight:700; font-size:14px; }}
   .irow.crit .impact {{ color:var(--neg); }} .irow.mod .impact {{ color:var(--warn); }} .irow.min .impact {{ color:var(--pos); }}
   .empty {{ padding:30px 14px; text-align:center; color:var(--txt3); font-size:13px; }}
+  .pager {{ display:flex; align-items:center; justify-content:space-between; margin-top:12px; padding:0 2px; }}
+  .pager .info {{ font-size:11px; color:var(--txt3); letter-spacing:0.03em; }}
+  .pager .nav {{ display:flex; gap:6px; align-items:center; }}
+  .pager button {{ background:var(--panel); border:1px solid var(--line); color:var(--txt2); font-size:12px;
+      padding:5px 12px; border-radius:6px; cursor:pointer; font-family:inherit; }}
+  .pager button:hover:not(:disabled) {{ border-color:var(--accent); color:var(--txt); }}
+  .pager button:disabled {{ opacity:0.35; cursor:default; }}
+  .pager .pg {{ font-family:var(--mono); font-size:12px; color:var(--txt2); min-width:54px; text-align:center; }}
 </style>
 <div class="eyebrow">injury report · {label}</div>
 <div class="team">{impact['team']}</div>
@@ -428,7 +424,49 @@ def injuries_html(impact, label):
   <div class="scell"><div class="k">injuries</div><div class="v">{impact.get('injury_count', 0)}</div></div>
   <div class="scell"><div class="k">critical</div><div class="v">{len(crit)}</div></div>
 </div>
-{body}
+<div id="rows"></div>
+<div class="pager" id="pager" style="display:none">
+  <div class="info" id="info"></div>
+  <div class="nav"><button id="prev">‹ prev</button><span class="pg" id="pg"></span><button id="next">next ›</button></div>
+</div>
+
+<script>
+  const ROWS = {data};
+  const SIZE = {INJURY_PAGE_SIZE};
+  const pages = Math.max(1, Math.ceil(ROWS.length / SIZE));
+  let page = 0;
+  const rowsEl = document.getElementById('rows');
+  const pagerEl = document.getElementById('pager');
+  const infoEl = document.getElementById('info');
+  const pgEl = document.getElementById('pg');
+  const prev = document.getElementById('prev');
+  const next = document.getElementById('next');
+
+  function render() {{
+    rowsEl.innerHTML = '';
+    if (!ROWS.length) {{ rowsEl.innerHTML = '<div class="empty">no reported injuries</div>'; return; }}
+    const start = page * SIZE;
+    ROWS.slice(start, start + SIZE).forEach(x => {{
+      const r = document.createElement('div');
+      r.className = 'irow ' + x.tone;
+      r.innerHTML = '<span class="pos">' + x.pos + '</span>' +
+        '<span class="pname">' + x.player + '</span>' +
+        '<span class="status">' + x.status + '</span>' +
+        '<span class="impact mono">' + x.impact.toFixed(1) + '</span>';
+      rowsEl.appendChild(r);
+    }});
+    if (pages > 1) {{
+      pagerEl.style.display = 'flex';
+      infoEl.textContent = (start + 1) + '–' + Math.min(start + SIZE, ROWS.length) + ' of ' + ROWS.length;
+      pgEl.textContent = (page + 1) + ' / ' + pages;
+      prev.disabled = page === 0;
+      next.disabled = page >= pages - 1;
+    }}
+  }}
+  prev.addEventListener('click', () => {{ if (page > 0) {{ page--; render(); }} }});
+  next.addEventListener('click', () => {{ if (page < pages - 1) {{ page++; render(); }} }});
+  render();
+</script>
 """
 
 

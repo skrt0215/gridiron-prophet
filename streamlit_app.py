@@ -351,9 +351,7 @@ with tab2:
     with _c1:
         _inj_team = st.selectbox('team', _inj_teams, key='injury_team')
     _impact = get_team_injury(_inj_team, slate_season, slate_week)
-    _rows = _impact.get('injury_count', 0) if _impact else 0
-    _h = 320 + min(_rows, 30) * 46
-    components.html(vault.injuries_html(_impact, hero_payload['label']), height=_h, scrolling=True)
+    components.html(vault.injuries_html(_impact, hero_payload['label']), height=vault.injuries_height(), scrolling=False)
 
 with tab3:
     st.markdown("<div class='section-header'>HEAD-TO-HEAD MATCHUP</div>", unsafe_allow_html=True)
