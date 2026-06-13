@@ -56,6 +56,10 @@ def get_hero():
     accuracy = predictor.holdout_accuracy
     return payload, accuracy, season, week
 
+@st.cache_data(ttl=900, show_spinner=False)
+def get_team_injury(team, season, week):
+    return get_injury_analyzer().get_team_injury_impact(team, season, week)
+
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;900&display=swap');
@@ -340,93 +344,16 @@ with tab1:
     components.html(vault.slate_html(hero_payload, hero_accuracy), height=860, scrolling=True)
 
 with tab2:
-    st.markdown("<div class='section-header'>INJURY ANALYSIS</div>", unsafe_allow_html=True)
-    
-    analyzer = get_injury_analyzer()
-    teams = analyzer.db.get_all_teams()
-    team_abbrs = sorted([t['abbreviation'] for t in teams])
-    
-    col1, col2 = st.columns([1, 2])
-    
-    with col1:
-        selected_team = st.selectbox("Select Team", team_abbrs, key="injury_team")
-    
-    with col2:
-        if st.button("📋 GET INJURY REPORT", use_container_width=True):
-            with st.spinner(f"Analyzing {selected_team} injuries..."):
-                try:
-                    impact = analyzer.get_team_injury_impact(selected_team, st.session_state.current_season, st.session_state.current_week)
-                    
-                    if not impact:
-                        st.error("Unable to load injury data")
-                    else:
-                        col1, col2, col3 = st.columns(3)
-                        
-                        with col1:
-                            st.markdown(f"""
-                            <div class="metric-card">
-                                <div class="metric-value">{impact['total_impact']:.1f}</div>
-                                <div class="metric-label">Total Impact Score</div>
-                            </div>
-                            """, unsafe_allow_html=True)
-                        
-                        with col2:
-                            st.markdown(f"""
-                            <div class="metric-card">
-                                <div class="metric-value">{impact['injury_count']}</div>
-                                <div class="metric-label">Total Injuries</div>
-                            </div>
-                            """, unsafe_allow_html=True)
-                        
-                        with col3:
-                            st.markdown(f"""
-                            <div class="metric-card">
-                                <div class="metric-value">{len(impact['critical_injuries'])}</div>
-                                <div class="metric-label">Critical Injuries</div>
-                            </div>
-                            """, unsafe_allow_html=True)
-                        
-                        st.markdown("<br>", unsafe_allow_html=True)
-                        
-                        if impact.get('injuries'):
-                            critical_injuries = [inj for inj in impact['injuries'] if inj['impact_score'] >= 7.0]
-                            moderate_injuries = [inj for inj in impact['injuries'] if 3.0 <= inj['impact_score'] < 7.0]
-                            minor_injuries = [inj for inj in impact['injuries'] if inj['impact_score'] < 3.0]
-                            
-                            if critical_injuries:
-                                with st.expander(f"🔴 CRITICAL INJURIES ({len(critical_injuries)})", expanded=True):
-                                    for inj in critical_injuries:
-                                        st.markdown(f"""
-                                        <div class="injury-critical">
-                                            <strong>{inj['player']}</strong> - {inj['position']}<br>
-                                            Status: {inj['status']} | Impact: {inj['impact_score']:.1f}
-                                        </div>
-                                        """, unsafe_allow_html=True)
-                            
-                            if moderate_injuries:
-                                with st.expander(f"🟡 MODERATE INJURIES ({len(moderate_injuries)})", expanded=False):
-                                    for inj in moderate_injuries:
-                                        st.markdown(f"""
-                                        <div class="injury-moderate">
-                                            <strong>{inj['player']}</strong> - {inj['position']}<br>
-                                            Status: {inj['status']} | Impact: {inj['impact_score']:.1f}
-                                        </div>
-                                        """, unsafe_allow_html=True)
-                            
-                            if minor_injuries:
-                                with st.expander(f"🟢 MINOR INJURIES ({len(minor_injuries)})", expanded=False):
-                                    for inj in minor_injuries:
-                                        st.markdown(f"""
-                                        <div class="injury-minor">
-                                            <strong>{inj['player']}</strong> - {inj['position']}<br>
-                                            Status: {inj['status']} | Impact: {inj['impact_score']:.1f}
-                                        </div>
-                                        """, unsafe_allow_html=True)
-                        else:
-                            st.success(f"✅ {selected_team} has no significant injuries!")
-                
-                except Exception as e:
-                    st.error(f"Error loading injury data: {str(e)}")
+    st.markdown('<div class="vault-eyebrow">injury intelligence</div>', unsafe_allow_html=True)
+    _inj_analyzer = get_injury_analyzer()
+    _inj_teams = sorted(t['abbreviation'] for t in _inj_analyzer.db.get_all_teams())
+    _c1, _c2 = st.columns([1, 3])
+    with _c1:
+        _inj_team = st.selectbox('team', _inj_teams, key='injury_team')
+    _impact = get_team_injury(_inj_team, slate_season, slate_week)
+    _rows = _impact.get('injury_count', 0) if _impact else 0
+    _h = 320 + min(_rows, 30) * 46
+    components.html(vault.injuries_html(_impact, hero_payload['label']), height=_h, scrolling=True)
 
 with tab3:
     st.markdown("<div class='section-header'>HEAD-TO-HEAD MATCHUP</div>", unsafe_allow_html=True)

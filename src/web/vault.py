@@ -49,6 +49,12 @@ def shell_css():
   .stTabs [data-baseweb="tab"]:hover {{ color:{PALETTE['txt']}; }}
   .vault-eyebrow {{ font-size:11px; color:{PALETTE['txt3']}; letter-spacing:0.07em;
       text-transform:lowercase; }}
+  .stSelectbox label, .stNumberInput label {{ color:{PALETTE['txt2']}; font-size:12px;
+      text-transform:lowercase; letter-spacing:0.04em; }}
+  div[data-baseweb="select"] > div {{ background:{PALETTE['panel']}; border-color:{PALETTE['line']};
+      color:{PALETTE['txt']}; }}
+  div[data-baseweb="select"] svg {{ color:{PALETTE['accent']}; }}
+  .stApp h1, .stApp h2, .stApp h3 {{ color:{PALETTE['txt']}; }}
 </style>
 """
 
@@ -354,6 +360,75 @@ def slate_html(payload, accuracy_pct):
   segA.addEventListener('click', () => {{ segA.classList.add('on'); segE.classList.remove('on'); render('all'); }});
   render(DEFAULT_VIEW);
 </script>
+"""
+
+
+def injuries_html(impact, label):
+    """Vault-styled injury report panel for one team."""
+    injuries = impact.get('injuries', [])
+    crit = [x for x in injuries if x['impact_score'] >= 7]
+    mod = [x for x in injuries if 3 <= x['impact_score'] < 7]
+    minor = [x for x in injuries if x['impact_score'] < 3]
+
+    def section(title, items, tone):
+        if not items:
+            return ''
+        rows = []
+        for x in items:
+            rows.append(
+                f'<div class="irow {tone}">'
+                f'<span class="pos">{x["position"]}</span>'
+                f'<span class="pname">{x["player"]}</span>'
+                f'<span class="status">{x["status"]}</span>'
+                f'<span class="impact mono">{x["impact_score"]:.1f}</span>'
+                f'</div>'
+            )
+        return (f'<div class="isec"><div class="ihead {tone}">{title} · {len(items)}</div>'
+                f'{"".join(rows)}</div>')
+
+    if not injuries:
+        body = f'<div class="empty">no reported injuries for {impact["team"]} · {label}</div>'
+    else:
+        body = (section('critical', crit, 'crit')
+                + section('moderate', mod, 'mod')
+                + section('minor', minor, 'min'))
+
+    total = impact.get('total_impact', 0)
+    return f"""
+<style>
+  :root {{{_VARS}}}
+  * {{ box-sizing:border-box; margin:0; padding:0; }}
+  body {{ background:var(--bg); color:var(--txt); font-family:var(--sans); font-size:14px; -webkit-font-smoothing:antialiased; }}
+  .mono {{ font-family:var(--mono); font-variant-numeric:tabular-nums; }}
+  .eyebrow {{ font-size:11px; color:var(--txt3); letter-spacing:0.07em; text-transform:lowercase; }}
+  .team {{ font-size:22px; font-weight:700; margin-top:2px; }}
+  .stats {{ display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin:14px 0 18px; }}
+  .scell {{ background:var(--panel2); border:1px solid var(--line); border-radius:8px; padding:11px 13px; }}
+  .scell .k {{ font-size:10px; color:var(--txt3); text-transform:lowercase; letter-spacing:0.05em; }}
+  .scell .v {{ font-family:var(--mono); font-variant-numeric:tabular-nums; font-size:20px; font-weight:700; margin-top:3px; }}
+  .isec {{ margin-bottom:16px; }}
+  .ihead {{ font-size:11px; text-transform:lowercase; letter-spacing:0.06em; padding:0 14px 7px; }}
+  .ihead.crit {{ color:var(--neg); }} .ihead.mod {{ color:var(--warn); }} .ihead.min {{ color:var(--pos); }}
+  .irow {{ display:grid; grid-template-columns:54px 1fr auto 56px; gap:12px; align-items:center;
+      padding:11px 14px; background:var(--panel); border:1px solid var(--line); border-left:2px solid var(--line);
+      border-radius:7px; margin-bottom:5px; }}
+  .irow.crit {{ border-left-color:var(--neg); }} .irow.mod {{ border-left-color:var(--warn); }} .irow.min {{ border-left-color:var(--pos); }}
+  .pos {{ font-size:10px; font-weight:700; color:var(--txt2); text-align:center; background:var(--panel2);
+      border:1px solid var(--line); border-radius:5px; padding:3px 0; letter-spacing:0.03em; }}
+  .pname {{ font-weight:600; font-size:14px; }}
+  .status {{ font-size:11.5px; color:var(--txt2); letter-spacing:0.02em; }}
+  .impact {{ text-align:right; font-weight:700; font-size:14px; }}
+  .irow.crit .impact {{ color:var(--neg); }} .irow.mod .impact {{ color:var(--warn); }} .irow.min .impact {{ color:var(--pos); }}
+  .empty {{ padding:30px 14px; text-align:center; color:var(--txt3); font-size:13px; }}
+</style>
+<div class="eyebrow">injury report · {label}</div>
+<div class="team">{impact['team']}</div>
+<div class="stats">
+  <div class="scell"><div class="k">total impact</div><div class="v">{total:.1f}</div></div>
+  <div class="scell"><div class="k">injuries</div><div class="v">{impact.get('injury_count', 0)}</div></div>
+  <div class="scell"><div class="k">critical</div><div class="v">{len(crit)}</div></div>
+</div>
+{body}
 """
 
 
