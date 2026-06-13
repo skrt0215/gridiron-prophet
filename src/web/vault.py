@@ -515,6 +515,75 @@ def injuries_html(impact, label):
 """
 
 
+def matchup_height():
+    return 470
+
+
+def matchup_html(prediction, home, away, label):
+    """Vault head-to-head breakdown for a chosen matchup."""
+    line = float(prediction['model_betting_line'])
+    prob = float(prediction['ml_home_win_probability'])
+    prob_team = home if prob >= 0.5 else away
+    prob_show = prob if prob >= 0.5 else 1 - prob
+
+    pills = []
+    for key, val in sorted(prediction['components'].items(), key=lambda kv: abs(kv[1]), reverse=True):
+        label_txt = DRIVER_LABELS.get(key, key.replace('_', ' '))
+        cls = 'x' if key == 'home_field' else 'p' if val > 0.05 else 'n' if val < -0.05 else 'x'
+        pills.append(f'<span class="pill {cls}">{label_txt} {val:+.1f}</span>')
+    pills_html = ''.join(pills)
+
+    inj = prediction['injury_impact']
+    adv = float(inj['away']) - float(inj['home'])
+    if abs(adv) < 3:
+        health = 'health edge · even'
+    else:
+        healthier = home if adv > 0 else away
+        health = f'health edge · {healthier} by {abs(adv):.1f}'
+
+    return f"""
+<style>
+  :root {{{_VARS}}}
+  * {{ box-sizing:border-box; margin:0; padding:0; }}
+  body {{ background:var(--bg); color:var(--txt); font-family:var(--sans); font-size:14px; -webkit-font-smoothing:antialiased; }}
+  .mono {{ font-family:var(--mono); font-variant-numeric:tabular-nums; }}
+  .eyebrow {{ font-size:11px; color:var(--txt3); letter-spacing:0.07em; text-transform:lowercase; }}
+  .vs {{ font-size:26px; font-weight:800; margin-top:3px; letter-spacing:-0.01em; }}
+  .vs span {{ color:var(--txt3); font-weight:400; }}
+  .recs {{ font-size:12px; color:var(--txt3); margin-top:2px; }}
+  .dgrid {{ display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin:16px 0; }}
+  .dcell {{ background:var(--panel2); border:1px solid var(--line); border-radius:8px; padding:12px 13px; }}
+  .dcell .k {{ font-size:10px; color:var(--txt3); text-transform:lowercase; letter-spacing:0.05em; }}
+  .dcell .val {{ font-family:var(--mono); font-variant-numeric:tabular-nums; font-size:20px; font-weight:700; margin-top:4px; }}
+  .drivers {{ display:flex; gap:6px; flex-wrap:wrap; align-items:center; margin:4px 0 18px; }}
+  .drivers .lab {{ font-size:11px; color:var(--txt3); margin-right:2px; }}
+  .pill {{ font-size:11px; font-family:var(--mono); font-variant-numeric:tabular-nums; padding:3px 9px;
+      border-radius:5px; background:var(--panel2); border:1px solid var(--line); }}
+  .pill.p {{ color:var(--pos); }} .pill.n {{ color:var(--neg); }} .pill.x {{ color:var(--txt2); }}
+  .inj {{ display:grid; grid-template-columns:1fr 1fr; gap:8px; }}
+  .icard {{ background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:12px 14px; }}
+  .icard .team {{ font-weight:700; font-size:14px; }}
+  .icard .big {{ font-family:var(--mono); font-variant-numeric:tabular-nums; font-size:22px; font-weight:700; margin-top:4px; }}
+  .icard .crit {{ font-size:11px; color:var(--txt3); margin-top:3px; }}
+  .health {{ margin-top:12px; font-size:12px; color:var(--accent); letter-spacing:0.03em; }}
+</style>
+<div class="eyebrow">head-to-head · {label}</div>
+<div class="vs">{away} <span>@</span> {home}</div>
+<div class="recs">{prediction.get('away_record','')} · {prediction.get('home_record','')}</div>
+<div class="dgrid">
+  <div class="dcell"><div class="k">model line</div><div class="val">{home} {line:+.1f}</div></div>
+  <div class="dcell"><div class="k">{prob_team} win prob</div><div class="val">{prob_show*100:.0f}%</div></div>
+  <div class="dcell"><div class="k">confidence</div><div class="val">{prediction.get('confidence','—')}</div></div>
+</div>
+<div class="drivers"><span class="lab">drivers</span>{pills_html}</div>
+<div class="inj">
+  <div class="icard"><div class="team">{home}</div><div class="big">{float(inj['home']):.1f}</div><div class="crit">{inj['critical_home']} critical · injury impact</div></div>
+  <div class="icard"><div class="team">{away}</div><div class="big">{float(inj['away']):.1f}</div><div class="crit">{inj['critical_away']} critical · injury impact</div></div>
+</div>
+<div class="health">{health}</div>
+"""
+
+
 def resolve_slate_week(db, current_season):
     """Pick the week to show: current season's latest completed reg week, else
     the most recent season with completed regular-season games."""

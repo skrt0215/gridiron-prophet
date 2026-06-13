@@ -60,6 +60,10 @@ def get_hero():
 def get_team_injury(team, season, week):
     return get_injury_analyzer().get_team_injury_impact(team, season, week)
 
+@st.cache_data(ttl=900, show_spinner=False)
+def get_matchup(home, away, season, week):
+    return load_predictor().calculate_comprehensive_prediction(home, away, season, week)
+
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;900&display=swap');
@@ -354,89 +358,20 @@ with tab2:
     components.html(vault.injuries_html(_impact, hero_payload['label']), height=vault.injuries_height(), scrolling=False)
 
 with tab3:
-    st.markdown("<div class='section-header'>HEAD-TO-HEAD MATCHUP</div>", unsafe_allow_html=True)
-    
-    analyzer = get_injury_analyzer()
-    teams = analyzer.db.get_all_teams()
-    team_abbrs = sorted([t['abbreviation'] for t in teams])
-    
-    col1, col2, col3 = st.columns([2, 1, 2])
-    
-    with col1:
-        away_team = st.selectbox("Away Team", team_abbrs, key="matchup_away")
-    
-    with col2:
-        st.markdown("<div style='text-align: center; padding-top: 30px; font-size: 2rem;'>@</div>", unsafe_allow_html=True)
-    
-    with col3:
-        home_team = st.selectbox("Home Team", team_abbrs, key="matchup_home")
-    
-    if st.button("⚔️ ANALYZE MATCHUP", use_container_width=True):
-        with st.spinner("Comparing teams..."):
-            predictor = load_predictor()
-            
-            prediction = predictor.calculate_comprehensive_prediction(home_team, away_team, st.session_state.current_season, st.session_state.current_week)
-            
-            st.markdown(f"<div class='game-title' style='text-align: center; margin: 2rem 0;'>{away_team} @ {home_team}</div>", unsafe_allow_html=True)
-            
-            col1, col2, col3 = st.columns(3)
-            
-            with col1:
-                st.markdown(f"""
-                <div class="metric-card">
-                    <div class="metric-value">{home_team} {prediction['model_betting_line']:+.1f}</div>
-                    <div class="metric-label">Model Spread</div>
-                </div>
-                """, unsafe_allow_html=True)
-            
-            with col2:
-                st.markdown(f"""
-                <div class="metric-card">
-                    <div class="metric-value">{prediction['ml_home_win_probability']:.1%}</div>
-                    <div class="metric-label">{home_team} Win Probability</div>
-                </div>
-                """, unsafe_allow_html=True)
-            
-            with col3:
-                st.markdown(f"""
-                <div class="metric-card">
-                    <div class="metric-value">{prediction['confidence']}</div>
-                    <div class="metric-label">Prediction Confidence</div>
-                </div>
-                """, unsafe_allow_html=True)
-            
-            st.markdown("<br>", unsafe_allow_html=True)
-            
-            with st.expander("📊 PREDICTION BREAKDOWN", expanded=True):
-                components_df = pd.DataFrame([
-                    {"Factor": k.replace('_', ' ').title(), "Value": f"{v:+.2f}"}
-                    for k, v in prediction['components'].items()
-                ])
-                st.dataframe(components_df, use_container_width=True, hide_index=True)
-            
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                st.markdown(f"""
-                <div class="metric-card">
-                    <div class="metric-value">{prediction['injury_impact']['home']:.1f}</div>
-                    <div class="metric-label">{home_team} Injury Impact</div>
-                    <div style="color: #94a3b8; font-size: 0.85rem; margin-top: 0.5rem;">
-                        {prediction['injury_impact']['critical_home']} critical injuries
-                    </div>
-                </div>
-                """, unsafe_allow_html=True)
-            
-            with col2:
-                st.markdown(f"""
-                <div class="metric-card">
-                    <div class="metric-value">{prediction['injury_impact']['away']:.1f}</div>
-                    <div class="metric-label">{away_team} Injury Impact</div>
-                    <div style="color: #94a3b8; font-size: 0.85rem; margin-top: 0.5rem;">
-                        {prediction['injury_impact']['critical_away']} critical injuries
-                    </div>
-                </div>
-                """, unsafe_allow_html=True)
+    st.markdown('<div class="vault-eyebrow">head-to-head</div>', unsafe_allow_html=True)
+    _mu_teams = sorted(t['abbreviation'] for t in get_injury_analyzer().db.get_all_teams())
+    _a, _mid, _b = st.columns([2, 1, 2])
+    with _a:
+        _away = st.selectbox('away', _mu_teams, index=0, key='matchup_away')
+    with _mid:
+        st.markdown("<div style='text-align:center;padding-top:30px;color:#5e636d;font-size:1.4rem'>@</div>", unsafe_allow_html=True)
+    with _b:
+        _home = st.selectbox('home', _mu_teams, index=min(1, len(_mu_teams)-1), key='matchup_home')
+    if _away == _home:
+        st.markdown("<div style='color:#9298a3;font-size:13px;padding:8px 2px'>pick two different teams</div>", unsafe_allow_html=True)
+    else:
+        _pred = get_matchup(_home, _away, slate_season, slate_week)
+        components.html(vault.matchup_html(_pred, _home, _away, hero_payload['label']), height=vault.matchup_height(), scrolling=False)
 
 with tab4:
     st.markdown("<div class='section-header'>TEAM ROSTERS</div>", unsafe_allow_html=True)
