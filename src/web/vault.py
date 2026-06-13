@@ -12,6 +12,21 @@ PALETTE = {
     'pos': '#3ecf8e', 'neg': '#e2554d', 'warn': '#e0a82e',
 }
 
+ROW_H = 47
+SLATE_PAGE_SIZE = 8
+INJURY_PAGE_SIZE = 9
+
+_PAGER_CSS = """
+  .pager { display:flex; align-items:center; justify-content:space-between; margin-top:12px; padding:0 2px; }
+  .pager .info { font-size:11px; color:var(--txt3); letter-spacing:0.03em; }
+  .pager .nav { display:flex; gap:6px; align-items:center; }
+  .pager button { background:var(--panel); border:1px solid var(--line); color:var(--txt2); font-size:12px;
+      padding:5px 12px; border-radius:6px; cursor:pointer; font-family:inherit; }
+  .pager button:hover:not(:disabled) { border-color:var(--accent); color:var(--txt); }
+  .pager button:disabled { opacity:0.35; cursor:default; }
+  .pager .pg { font-family:var(--mono); font-size:12px; color:var(--txt2); min-width:54px; text-align:center; }
+"""
+
 DRIVER_LABELS = {
     'ml_model': 'ml model',
     'current_record': 'record',
@@ -205,6 +220,14 @@ def ticker_html(payload):
 """
 
 
+def slate_height(offseason):
+    """Fixed iframe height: a full page of rows + room for one open detail card."""
+    base = 200 + (44 if offseason else 0)
+    detail_reserve = 165
+    pager = 54
+    return base + SLATE_PAGE_SIZE * ROW_H + detail_reserve + pager
+
+
 def slate_html(payload, accuracy_pct):
     data = json.dumps(payload['games'])
     label = payload['label']
@@ -277,6 +300,7 @@ def slate_html(payload, accuracy_pct):
       color:#0a0b0d; border:none; font-weight:700; font-size:12px; padding:8px 16px; border-radius:7px;
       cursor:pointer; font-family:inherit; letter-spacing:0.02em; }}
   .empty {{ padding:40px 16px; text-align:center; color:var(--txt3); font-size:13px; }}
+{_PAGER_CSS}
 </style>
 
 <div class="top">
@@ -301,23 +325,38 @@ def slate_html(payload, accuracy_pct):
 
 <div class="cols"><span>matchup</span><span>model</span><span>vegas</span><span>edge</span><span>conf</span><span></span></div>
 <div id="rows"></div>
+<div class="pager" id="pager" style="display:none">
+  <div class="info" id="info"></div>
+  <div class="nav"><button id="prev">‹ prev</button><span class="pg" id="pg"></span><button id="next">next ›</button></div>
+</div>
 
 <script>
   const GAMES = {data};
-  const DEFAULT_VIEW = "{default_view}";
+  const SIZE = {SLATE_PAGE_SIZE};
+  let view = "{default_view}";
+  let page = 0;
   const rowsEl = document.getElementById('rows');
+  const pagerEl = document.getElementById('pager');
+  const infoEl = document.getElementById('info');
+  const pgEl = document.getElementById('pg');
+  const prev = document.getElementById('prev');
+  const next = document.getElementById('next');
 
   function flagged(g) {{ return g.flag === 'flag-hi' || g.flag === 'flag-md'; }}
+  function list() {{ return view === 'edges' ? GAMES.filter(flagged) : GAMES; }}
 
-  function render(view) {{
+  function render() {{
     rowsEl.innerHTML = '';
-    let list = GAMES;
-    if (view === 'edges') list = GAMES.filter(flagged);
-    if (!list.length) {{
+    const L = list();
+    const pages = Math.max(1, Math.ceil(L.length / SIZE));
+    if (page >= pages) page = pages - 1;
+    if (!L.length) {{
       rowsEl.innerHTML = '<div class="empty">no games with an edge ≥3 — switch to all games</div>';
+      pagerEl.style.display = 'none';
       return;
     }}
-    list.forEach(g => {{
+    const start = page * SIZE;
+    L.slice(start, start + SIZE).forEach(g => {{
       const r = document.createElement('div');
       r.className = 'row ' + (g.flag || '');
       r.innerHTML =
@@ -341,7 +380,11 @@ def slate_html(payload, accuracy_pct):
           '<div class="dcell"><div class="k">edge</div><div class="val" style="color:var(--accent)">' + g.edge + '</div></div>' +
         '</div>' +
         '<div class="drivers"><span class="lab">drivers</span>' + pills + '</div>' + copy;
-      r.addEventListener('click', () => r.classList.toggle('open'));
+      r.addEventListener('click', () => {{
+        const wasOpen = r.classList.contains('open');
+        rowsEl.querySelectorAll('.row.open').forEach(o => o.classList.remove('open'));
+        if (!wasOpen) r.classList.add('open');
+      }});
       rowsEl.appendChild(r);
       rowsEl.appendChild(d);
     }});
@@ -352,23 +395,32 @@ def slate_html(payload, accuracy_pct):
         const t = b.innerHTML; b.innerHTML = '✓ copied'; setTimeout(() => b.innerHTML = t, 1500);
       }});
     }});
+    if (pages > 1) {{
+      pagerEl.style.display = 'flex';
+      infoEl.textContent = (start + 1) + '–' + Math.min(start + SIZE, L.length) + ' of ' + L.length;
+      pgEl.textContent = (page + 1) + ' / ' + pages;
+      prev.disabled = page === 0;
+      next.disabled = page >= pages - 1;
+    }} else {{
+      pagerEl.style.display = 'none';
+    }}
   }}
+
+  prev.addEventListener('click', () => {{ if (page > 0) {{ page--; render(); }} }});
+  next.addEventListener('click', () => {{ if (page < Math.ceil(list().length / SIZE) - 1) {{ page++; render(); }} }});
 
   const segE = document.getElementById('seg-edges');
   const segA = document.getElementById('seg-all');
-  segE.addEventListener('click', () => {{ segE.classList.add('on'); segA.classList.remove('on'); render('edges'); }});
-  segA.addEventListener('click', () => {{ segA.classList.add('on'); segE.classList.remove('on'); render('all'); }});
-  render(DEFAULT_VIEW);
+  segE.addEventListener('click', () => {{ segE.classList.add('on'); segA.classList.remove('on'); view = 'edges'; page = 0; render(); }});
+  segA.addEventListener('click', () => {{ segA.classList.add('on'); segE.classList.remove('on'); view = 'all'; page = 0; render(); }});
+  render();
 </script>
 """
 
 
-INJURY_PAGE_SIZE = 9
-
-
 def injuries_height():
     """Fixed iframe height so a full page fits with no inner scrollbar."""
-    return 252 + INJURY_PAGE_SIZE * 47 + 54
+    return 252 + INJURY_PAGE_SIZE * ROW_H + 54
 
 
 def injuries_html(impact, label):
@@ -408,14 +460,7 @@ def injuries_html(impact, label):
   .impact {{ text-align:right; font-weight:700; font-size:14px; }}
   .irow.crit .impact {{ color:var(--neg); }} .irow.mod .impact {{ color:var(--warn); }} .irow.min .impact {{ color:var(--pos); }}
   .empty {{ padding:30px 14px; text-align:center; color:var(--txt3); font-size:13px; }}
-  .pager {{ display:flex; align-items:center; justify-content:space-between; margin-top:12px; padding:0 2px; }}
-  .pager .info {{ font-size:11px; color:var(--txt3); letter-spacing:0.03em; }}
-  .pager .nav {{ display:flex; gap:6px; align-items:center; }}
-  .pager button {{ background:var(--panel); border:1px solid var(--line); color:var(--txt2); font-size:12px;
-      padding:5px 12px; border-radius:6px; cursor:pointer; font-family:inherit; }}
-  .pager button:hover:not(:disabled) {{ border-color:var(--accent); color:var(--txt); }}
-  .pager button:disabled {{ opacity:0.35; cursor:default; }}
-  .pager .pg {{ font-family:var(--mono); font-size:12px; color:var(--txt2); min-width:54px; text-align:center; }}
+{_PAGER_CSS}
 </style>
 <div class="eyebrow">injury report · {label}</div>
 <div class="team">{impact['team']}</div>

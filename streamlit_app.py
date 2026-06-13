@@ -341,7 +341,7 @@ if 'current_week' not in st.session_state:
 tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["THIS WEEK", "INJURIES", "MATCHUP", "ROSTERS", "PERFORMANCE", "MODEL"])
 
 with tab1:
-    components.html(vault.slate_html(hero_payload, hero_accuracy), height=860, scrolling=True)
+    components.html(vault.slate_html(hero_payload, hero_accuracy), height=vault.slate_height(hero_payload['offseason']), scrolling=False)
 
 with tab2:
     st.markdown('<div class="vault-eyebrow">injury intelligence</div>', unsafe_allow_html=True)
