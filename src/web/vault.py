@@ -139,7 +139,7 @@ def build_payload(predictor, db, season, week, offseason, label):
 
         if edge is None:
             edge_cls, flag = 'fl', ''
-            edge_show = '—'
+            edge_show = '-'
         else:
             ae = abs(edge)
             edge_show = _fmt_signed(edge)
@@ -158,14 +158,14 @@ def build_payload(predictor, db, season, week, offseason, label):
             'away': away, 'home': home,
             'arec': pred.get('away_record', ''), 'hrec': pred.get('home_record', ''),
             'model': f"{home} {_fmt_signed(line)}",
-            'vegas': vegas if vegas else '—',
+            'vegas': vegas if vegas else '-',
             'edge': edge_show, 'edge_val': edge if edge is not None else 0.0,
-            'cls': edge_cls, 'flag': flag, 'conf': pred.get('confidence', '—'),
+            'cls': edge_cls, 'flag': flag, 'conf': pred.get('confidence', '-'),
             'prob': f"{prob_team} {prob_show*100:.0f}%",
             'drivers': _driver_pills(pred['components']),
         })
 
-    if any(r['edge'] != '—' for r in rows):
+    if any(r['edge'] != '-' for r in rows):
         rows.sort(key=lambda r: abs(r['edge_val']), reverse=True)
     else:
         rows.sort(key=lambda r: abs(float(r['model'].split()[-1])), reverse=True)
@@ -233,11 +233,11 @@ def slate_html(payload, accuracy_pct):
     label = payload['label']
     n = len(payload['games'])
     flagged = payload['flagged']
-    acc = f"{accuracy_pct*100:.1f}%" if accuracy_pct else "—"
+    acc = f"{accuracy_pct*100:.1f}%" if accuracy_pct else "-"
     offseason = payload['offseason']
     banner = ''
     if offseason:
-        banner = (f'<div class="banner">offseason · no live odds — showing model projections '
+        banner = (f'<div class="banner">offseason · no live odds. showing model projections '
                   f'and final results for {label}. gold edges activate when betting lines are live.</div>')
     default_view = 'all' if offseason else 'edges'
     return f"""
@@ -351,7 +351,7 @@ def slate_html(payload, accuracy_pct):
     const pages = Math.max(1, Math.ceil(L.length / SIZE));
     if (page >= pages) page = pages - 1;
     if (!L.length) {{
-      rowsEl.innerHTML = '<div class="empty">no games with an edge ≥3 — switch to all games</div>';
+      rowsEl.innerHTML = '<div class="empty">no games with an edge ≥3. switch to all games</div>';
       pagerEl.style.display = 'none';
       return;
     }}
@@ -397,7 +397,7 @@ def slate_html(payload, accuracy_pct):
     }});
     if (pages > 1) {{
       pagerEl.style.display = 'flex';
-      infoEl.textContent = (start + 1) + '–' + Math.min(start + SIZE, L.length) + ' of ' + L.length;
+      infoEl.textContent = (start + 1) + '-' + Math.min(start + SIZE, L.length) + ' of ' + L.length;
       pgEl.textContent = (page + 1) + ' / ' + pages;
       prev.disabled = page === 0;
       next.disabled = page >= pages - 1;
@@ -502,7 +502,7 @@ def injuries_html(impact, label):
     }});
     if (pages > 1) {{
       pagerEl.style.display = 'flex';
-      infoEl.textContent = (start + 1) + '–' + Math.min(start + SIZE, ROWS.length) + ' of ' + ROWS.length;
+      infoEl.textContent = (start + 1) + '-' + Math.min(start + SIZE, ROWS.length) + ' of ' + ROWS.length;
       pgEl.textContent = (page + 1) + ' / ' + pages;
       prev.disabled = page === 0;
       next.disabled = page >= pages - 1;
@@ -510,6 +510,253 @@ def injuries_html(impact, label):
   }}
   prev.addEventListener('click', () => {{ if (page > 0) {{ page--; render(); }} }});
   next.addEventListener('click', () => {{ if (page < pages - 1) {{ page++; render(); }} }});
+  render();
+</script>
+"""
+
+
+FEATURE_LABELS = {
+    'home_wins': 'home wins', 'home_losses': 'home losses', 'home_win_pct': 'home win %',
+    'home_avg_points_scored': 'home pts for', 'home_avg_points_allowed': 'home pts against',
+    'away_wins': 'away wins', 'away_losses': 'away losses', 'away_win_pct': 'away win %',
+    'away_avg_points_scored': 'away pts for', 'away_avg_points_allowed': 'away pts against',
+}
+
+
+def performance_height():
+    return 660
+
+
+def performance_html(eval_stats):
+    """Honest out-of-sample model performance: accuracy vs baseline, feature weights, confusion."""
+    if not eval_stats:
+        return (f'<style>:root{{{_VARS}}}body{{background:var(--bg);color:var(--txt3);'
+                f'font-family:var(--sans);padding:30px;text-align:center}}</style>'
+                f'<div>model evaluation unavailable. train the model first</div>')
+
+    acc = eval_stats['accuracy'] * 100
+    base = eval_stats['home_baseline'] * 100
+    lift = acc - base
+    feats = eval_stats['feature_importance'][:10]
+    fmax = max((f['importance'] for f in feats), default=1) or 1
+    bars = []
+    for f in feats:
+        pct = f['importance'] / fmax * 100
+        bars.append(
+            f'<div class="frow"><span class="flab">{FEATURE_LABELS.get(f["feature"], f["feature"])}</span>'
+            f'<span class="ftrack"><span class="ffill" style="width:{pct:.0f}%"></span></span>'
+            f'<span class="fval mono">{f["importance"]:.3f}</span></div>'
+        )
+    cm = eval_stats['confusion']
+    return f"""
+<style>
+  :root {{{_VARS}}}
+  * {{ box-sizing:border-box; margin:0; padding:0; }}
+  body {{ background:var(--bg); color:var(--txt); font-family:var(--sans); font-size:14px; -webkit-font-smoothing:antialiased; }}
+  .mono {{ font-family:var(--mono); font-variant-numeric:tabular-nums; }}
+  .eyebrow {{ font-size:11px; color:var(--txt3); letter-spacing:0.07em; text-transform:lowercase; }}
+  .title {{ font-size:20px; font-weight:700; margin-top:2px; }}
+  .stats {{ display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin:14px 0 6px; }}
+  .scell {{ background:var(--panel2); border:1px solid var(--line); border-radius:8px; padding:11px 13px; }}
+  .scell .k {{ font-size:10px; color:var(--txt3); text-transform:lowercase; letter-spacing:0.05em; }}
+  .scell .v {{ font-family:var(--mono); font-variant-numeric:tabular-nums; font-size:20px; font-weight:700; margin-top:3px; }}
+  .scell .v.gold {{ color:var(--accent); }}
+  .scell .sub {{ font-size:10px; color:var(--pos); margin-top:3px; }}
+  .sectlab {{ font-size:11px; color:var(--txt3); text-transform:lowercase; letter-spacing:0.06em; margin:16px 0 8px; }}
+  .frow {{ display:grid; grid-template-columns:120px 1fr 48px; gap:10px; align-items:center; margin-bottom:6px; }}
+  .flab {{ font-size:11.5px; color:var(--txt2); }}
+  .ftrack {{ height:8px; background:var(--panel2); border:1px solid var(--line); border-radius:4px; overflow:hidden; }}
+  .ffill {{ display:block; height:100%; background:linear-gradient(90deg,var(--accent-dim),var(--accent)); }}
+  .fval {{ font-size:11px; color:var(--txt2); text-align:right; }}
+  .bottom {{ display:grid; grid-template-columns:auto 1fr; gap:18px; margin-top:16px; align-items:start; }}
+  .cm {{ display:grid; grid-template-columns:auto auto auto; gap:4px; font-size:11px; }}
+  .cm .cell {{ background:var(--panel2); border:1px solid var(--line); border-radius:6px; padding:8px 12px;
+      font-family:var(--mono); font-variant-numeric:tabular-nums; text-align:center; min-width:54px; }}
+  .cm .hd {{ background:transparent; border:none; color:var(--txt3); font-family:var(--sans); font-size:10px; }}
+  .cm .diag {{ color:var(--pos); }}
+  .note {{ font-size:11.5px; color:var(--txt3); line-height:1.6; }}
+</style>
+<div class="eyebrow">model performance · out-of-sample</div>
+<div class="title">how the model holds up</div>
+<div class="stats">
+  <div class="scell"><div class="k">holdout accuracy</div><div class="v gold">{acc:.1f}%</div><div class="sub">+{lift:.1f} vs baseline</div></div>
+  <div class="scell"><div class="k">home-field baseline</div><div class="v">{base:.1f}%</div></div>
+  <div class="scell"><div class="k">test games</div><div class="v">{eval_stats['test_size']}</div></div>
+  <div class="scell"><div class="k">training games</div><div class="v">{eval_stats['train_size']}</div></div>
+</div>
+<div class="sectlab">what the model weighs · feature importance</div>
+{''.join(bars)}
+<div class="bottom">
+  <div>
+    <div class="sectlab" style="margin-top:0">confusion · test set</div>
+    <div class="cm">
+      <span class="cell hd"></span><span class="cell hd">pred away</span><span class="cell hd">pred home</span>
+      <span class="cell hd">actual away</span><span class="cell diag">{cm[0][0]}</span><span class="cell">{cm[0][1]}</span>
+      <span class="cell hd">actual home</span><span class="cell">{cm[1][0]}</span><span class="cell diag">{cm[1][1]}</span>
+    </div>
+  </div>
+  <div class="note">accuracy is measured on a held-out 20% of 2022-2025 games the model never trained on.
+  the honest out-of-sample number, not an in-season grade. live weekly grading populates here as the 2026 season plays.</div>
+</div>
+"""
+
+
+def model_height():
+    return 560
+
+
+def model_html(accuracy, label):
+    """Vault methodology panel: how the model works, honest framing."""
+    acc = f"{accuracy * 100:.1f}%" if accuracy else "-"
+    cards = [
+        ('machine learning',
+         f'Random Forest win classifier trained on completed 2022-2025 games. '
+         f'The betting line blends the model with team-form, injury, historical-trend and home-field components.'),
+        ('what it weighs',
+         'team form: records, points for / against · injuries: position-weighted, snap-aware · '
+         'historical trend · home-field advantage'),
+        ('reading the edge',
+         'edge = model line - vegas line · 🔥 ≥10 best · ⚡ 5-9 value · ⚠️ 3-4 minimum · skip under 3'),
+        ('bankroll',
+         '1 unit = 1-2% of bankroll · high 2-3u · medium 1-2u · low 0.5-1u · never more than 5% on one game'),
+        ('trust & limits',
+         f'out-of-sample accuracy {acc} · breakeven 52.4% at -110 · weekly variance is real · '
+         f'educational use only. bet responsibly'),
+        ('data & cadence',
+         'espn stats & injuries · the odds api (draftkings) · nflverse · retrained every tuesday'),
+    ]
+    body = ''.join(
+        f'<div class="mcard"><div class="mt">{t}</div><div class="mb">{b}</div></div>' for t, b in cards
+    )
+    return f"""
+<style>
+  :root {{{_VARS}}}
+  * {{ box-sizing:border-box; margin:0; padding:0; }}
+  body {{ background:var(--bg); color:var(--txt); font-family:var(--sans); font-size:14px; -webkit-font-smoothing:antialiased; }}
+  .eyebrow {{ font-size:11px; color:var(--txt3); letter-spacing:0.07em; text-transform:lowercase; }}
+  .title {{ font-size:20px; font-weight:700; margin:2px 0 16px; }}
+  .grid {{ display:grid; grid-template-columns:1fr 1fr; gap:10px; }}
+  .mcard {{ background:var(--panel); border:1px solid var(--line); border-radius:9px; padding:14px 16px; }}
+  .mcard .mt {{ font-size:11px; color:var(--accent); text-transform:lowercase; letter-spacing:0.06em; font-weight:700; }}
+  .mcard .mb {{ font-size:13px; color:var(--txt2); line-height:1.6; margin-top:7px; }}
+</style>
+<div class="eyebrow">the model · {label}</div>
+<div class="title">how it works</div>
+<div class="grid">{body}</div>
+"""
+
+
+ROSTER_PAGE_SIZE = 11
+
+
+def roster_height():
+    return 250 + ROSTER_PAGE_SIZE * 40 + 54
+
+
+def roster_html(rows, team, label):
+    """Vault roster table: position-group filter + pagination."""
+    data = json.dumps(rows)
+    return f"""
+<style>
+  :root {{{_VARS}}}
+  * {{ box-sizing:border-box; margin:0; padding:0; }}
+  body {{ background:var(--bg); color:var(--txt); font-family:var(--sans); font-size:14px; -webkit-font-smoothing:antialiased; }}
+  .mono {{ font-family:var(--mono); font-variant-numeric:tabular-nums; }}
+  .eyebrow {{ font-size:11px; color:var(--txt3); letter-spacing:0.07em; text-transform:lowercase; }}
+  .team {{ font-size:22px; font-weight:700; margin-top:2px; }}
+  .head {{ display:flex; align-items:center; justify-content:space-between; margin:10px 0 12px; }}
+  .head .cnt {{ font-size:12px; color:var(--txt3); }}
+  .seg {{ display:flex; gap:4px; }}
+  .seg button {{ background:var(--panel); border:1px solid var(--line); color:var(--txt2); font-size:12px;
+      padding:5px 12px; border-radius:6px; cursor:pointer; font-family:inherit; }}
+  .seg button.on {{ background:var(--accent); border-color:var(--accent); color:#0a0b0d; font-weight:600; }}
+  .cols {{ display:grid; grid-template-columns:54px 1fr 56px 70px; gap:12px; padding:0 14px 7px;
+      font-size:10px; color:var(--txt3); text-transform:lowercase; letter-spacing:0.06em; border-bottom:1px solid var(--line); }}
+  .cols span:nth-child(3), .cols span:nth-child(4) {{ text-align:right; }}
+  .prow {{ display:grid; grid-template-columns:54px 1fr 56px 70px; gap:12px; align-items:center;
+      padding:9px 14px; border-bottom:1px solid var(--line); }}
+  .prow:hover {{ background:var(--panel); }}
+  .pos {{ font-size:10px; font-weight:700; color:var(--txt2); text-align:center; background:var(--panel2);
+      border:1px solid var(--line); border-radius:5px; padding:3px 0; letter-spacing:0.03em; }}
+  .pname {{ font-weight:600; font-size:14px; }}
+  .num {{ text-align:right; font-family:var(--mono); font-variant-numeric:tabular-nums; color:var(--txt2); font-size:13px; }}
+  .exp {{ text-align:right; font-family:var(--mono); font-variant-numeric:tabular-nums; color:var(--txt2); font-size:13px; }}
+  .empty {{ padding:30px 14px; text-align:center; color:var(--txt3); font-size:13px; }}
+{_PAGER_CSS}
+</style>
+<div class="eyebrow">roster · {label}</div>
+<div class="team">{team}</div>
+<div class="head">
+  <div class="cnt" id="cnt"></div>
+  <div class="seg">
+    <button id="s-all" class="on">all</button>
+    <button id="s-off">offense</button>
+    <button id="s-def">defense</button>
+    <button id="s-st">special</button>
+  </div>
+</div>
+<div class="cols"><span>pos</span><span>player</span><span>#</span><span>exp</span></div>
+<div id="rows"></div>
+<div class="pager" id="pager" style="display:none">
+  <div class="info" id="info"></div>
+  <div class="nav"><button id="prev">‹ prev</button><span class="pg" id="pg"></span><button id="next">next ›</button></div>
+</div>
+
+<script>
+  const ALL = {data};
+  const SIZE = {ROSTER_PAGE_SIZE};
+  const OFF = ['QB','RB','WR','TE','OL','OT','OG','G','C','FB'];
+  const DEF = ['DL','DE','DT','LB','CB','S','DB','EDGE','NT'];
+  const ST = ['K','P','LS'];
+  let view = 'all', page = 0;
+  const rowsEl = document.getElementById('rows');
+  const pagerEl = document.getElementById('pager');
+  const cntEl = document.getElementById('cnt');
+  const infoEl = document.getElementById('info');
+  const pgEl = document.getElementById('pg');
+  const prev = document.getElementById('prev');
+  const next = document.getElementById('next');
+
+  function list() {{
+    if (view === 'off') return ALL.filter(p => OFF.includes(p.pos));
+    if (view === 'def') return ALL.filter(p => DEF.includes(p.pos));
+    if (view === 'st') return ALL.filter(p => ST.includes(p.pos));
+    return ALL;
+  }}
+  function render() {{
+    const L = list();
+    const pages = Math.max(1, Math.ceil(L.length / SIZE));
+    if (page >= pages) page = pages - 1;
+    cntEl.textContent = L.length + ' players';
+    rowsEl.innerHTML = '';
+    if (!L.length) {{ rowsEl.innerHTML = '<div class="empty">no players</div>'; pagerEl.style.display='none'; return; }}
+    const start = page * SIZE;
+    L.slice(start, start + SIZE).forEach(p => {{
+      const r = document.createElement('div');
+      r.className = 'prow';
+      r.innerHTML = '<span class="pos">' + p.pos + '</span>' +
+        '<span class="pname">' + p.player + '</span>' +
+        '<span class="num">' + (p.num != null ? p.num : '-') + '</span>' +
+        '<span class="exp">' + (p.exp != null ? p.exp + 'y' : '-') + '</span>';
+      rowsEl.appendChild(r);
+    }});
+    if (pages > 1) {{
+      pagerEl.style.display = 'flex';
+      infoEl.textContent = (start + 1) + '-' + Math.min(start + SIZE, L.length) + ' of ' + L.length;
+      pgEl.textContent = (page + 1) + ' / ' + pages;
+      prev.disabled = page === 0;
+      next.disabled = page >= pages - 1;
+    }} else {{ pagerEl.style.display = 'none'; }}
+  }}
+  prev.addEventListener('click', () => {{ if (page > 0) {{ page--; render(); }} }});
+  next.addEventListener('click', () => {{ if (page < Math.ceil(list().length / SIZE) - 1) {{ page++; render(); }} }});
+  [['s-all','all'],['s-off','off'],['s-def','def'],['s-st','st']].forEach(([id, v]) => {{
+    document.getElementById(id).addEventListener('click', () => {{
+      document.querySelectorAll('.seg button').forEach(b => b.classList.remove('on'));
+      document.getElementById(id).classList.add('on');
+      view = v; page = 0; render();
+    }});
+  }});
   render();
 </script>
 """
@@ -573,7 +820,7 @@ def matchup_html(prediction, home, away, label):
 <div class="dgrid">
   <div class="dcell"><div class="k">model line</div><div class="val">{home} {line:+.1f}</div></div>
   <div class="dcell"><div class="k">{prob_team} win prob</div><div class="val">{prob_show*100:.0f}%</div></div>
-  <div class="dcell"><div class="k">confidence</div><div class="val">{prediction.get('confidence','—')}</div></div>
+  <div class="dcell"><div class="k">confidence</div><div class="val">{prediction.get('confidence','-')}</div></div>
 </div>
 <div class="drivers"><span class="lab">drivers</span>{pills_html}</div>
 <div class="inj">
