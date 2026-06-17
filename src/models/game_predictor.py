@@ -21,6 +21,7 @@ class NFLGamePredictor:
         self.model = None
         self.feature_columns = None
         self.last_accuracy = None
+        self.eval_stats = None
     
     def fetch_training_data(self, seasons, max_week=None):
         """
@@ -195,6 +196,17 @@ class NFLGamePredictor:
         print(f"\nHome Field Advantage in Test Set:")
         print(f"  Home team wins: {home_wins}/{total_games} ({home_wins/total_games:.1%})")
         self.last_accuracy = accuracy
+        self.eval_stats = {
+            'accuracy': float(accuracy),
+            'train_size': int(len(X_train)),
+            'test_size': int(total_games),
+            'home_baseline': float(home_wins / total_games) if total_games else 0.0,
+            'confusion': [[int(cm[0][0]), int(cm[0][1])], [int(cm[1][0]), int(cm[1][1])]],
+            'feature_importance': [
+                {'feature': row['feature'], 'importance': float(row['importance'])}
+                for _, row in importances.iterrows()
+            ],
+        }
         return accuracy
     
     def save_model(self, filepath='src/models/spread_model.pkl'):
