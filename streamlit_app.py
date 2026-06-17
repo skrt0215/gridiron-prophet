@@ -64,6 +64,23 @@ def get_team_injury(team, season, week):
 def get_matchup(home, away, season, week):
     return load_predictor().calculate_comprehensive_prediction(home, away, season, week)
 
+@st.cache_data(ttl=900, show_spinner=False)
+def get_roster(team, season):
+    return get_db().execute_query("""
+        SELECT p.name AS player, ps.position AS pos,
+               ps.jersey_number AS num, ps.years_in_league AS exp
+        FROM player_seasons ps
+        JOIN players p ON ps.player_id = p.player_id
+        WHERE ps.team_id = (SELECT team_id FROM teams WHERE abbreviation = %s)
+        AND ps.season = %s AND ps.roster_status = 'Active'
+        ORDER BY CASE ps.position
+            WHEN 'QB' THEN 1 WHEN 'RB' THEN 2 WHEN 'WR' THEN 3 WHEN 'TE' THEN 4
+            WHEN 'OL' THEN 5 WHEN 'OT' THEN 5 WHEN 'OG' THEN 5 WHEN 'G' THEN 5 WHEN 'C' THEN 5
+            WHEN 'DL' THEN 6 WHEN 'DE' THEN 6 WHEN 'DT' THEN 6 WHEN 'LB' THEN 7
+            WHEN 'CB' THEN 8 WHEN 'S' THEN 8 WHEN 'DB' THEN 8
+            WHEN 'K' THEN 9 WHEN 'P' THEN 10 ELSE 11 END, p.name
+    """, (team, season))
+
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;900&display=swap');
@@ -374,268 +391,21 @@ with tab3:
         components.html(vault.matchup_html(_pred, _home, _away, hero_payload['label']), height=vault.matchup_height(), scrolling=False)
 
 with tab4:
-    st.markdown("<div class='section-header'>TEAM ROSTERS</div>", unsafe_allow_html=True)
-    
-    analyzer = get_injury_analyzer()
-    teams = analyzer.db.get_all_teams()
-    team_abbrs = sorted([t['abbreviation'] for t in teams])
-    
-    col1, col2 = st.columns([1, 2])
-    
-    with col1:
-        selected_team = st.selectbox("Select Team", team_abbrs, key="roster_team")
-    
-    with col2:
-        if st.button("📋 LOAD ROSTER", use_container_width=True):
-            with st.spinner(f"Loading {selected_team} roster..."):
-                query = """
-                    SELECT DISTINCT
-                        p.name as player_name,
-                        ps.position,
-                        ps.jersey_number,
-                        ps.status,
-                        p.height,
-                        p.weight,
-                        p.college,
-                        ps.years_in_league,
-                        ps.games_played,
-                        ps.games_started
-                    FROM player_seasons ps
-                    JOIN players p ON ps.player_id = p.player_id
-                    WHERE ps.team_id = (SELECT team_id FROM teams WHERE abbreviation = %s)
-                    AND ps.season = %s
-                    AND ps.roster_status = 'Active'
-                    ORDER BY 
-                        CASE ps.position
-                            WHEN 'QB' THEN 1
-                            WHEN 'RB' THEN 2
-                            WHEN 'WR' THEN 3
-                            WHEN 'TE' THEN 4
-                            WHEN 'OL' THEN 5
-                            WHEN 'DL' THEN 6
-                            WHEN 'LB' THEN 7
-                            WHEN 'DB' THEN 8
-                            WHEN 'K' THEN 9
-                            WHEN 'P' THEN 10
-                            ELSE 11
-                        END,
-                        p.name
-                """
-                
-                roster = analyzer.db.execute_query(query, (selected_team, st.session_state.current_season))
-                
-                if roster:
-                    st.success(f"✅ {len(roster)} active players")
-                    
-                    df = pd.DataFrame(roster)
-                    
-                    tab_off, tab_def, tab_st = st.tabs(["🏈 Offense", "🛡️ Defense", "🎯 Special Teams"])
-                    
-                    with tab_off:
-                        offense = df[df['position'].isin(['QB', 'RB', 'WR', 'TE', 'OL'])]
-                        st.dataframe(offense, use_container_width=True, hide_index=True)
-                    
-                    with tab_def:
-                        defense = df[df['position'].isin(['DL', 'LB', 'DB'])]
-                        st.dataframe(defense, use_container_width=True, hide_index=True)
-                    
-                    with tab_st:
-                        special = df[df['position'].isin(['K', 'P', 'LS'])]
-                        st.dataframe(special, use_container_width=True, hide_index=True)
-                else:
-                    st.warning(f"No roster data for {selected_team}")
+    st.markdown('<div class="vault-eyebrow">rosters</div>', unsafe_allow_html=True)
+    _r_teams = sorted(t['abbreviation'] for t in get_injury_analyzer().db.get_all_teams())
+    _rc1, _rc2 = st.columns([1, 3])
+    with _rc1:
+        _r_team = st.selectbox('team', _r_teams, key='roster_team')
+    _roster = get_roster(_r_team, CURRENT_SEASON)
+    components.html(vault.roster_html(_roster, _r_team, f'{CURRENT_SEASON} active'), height=vault.roster_height(), scrolling=False)
 
 with tab5:
-    st.markdown("<div class='section-header'>WEEKLY ACCURACY</div>", unsafe_allow_html=True)
-    
-    db = get_db()
-    
-    accuracy_data = db.execute_query("""
-        SELECT 
-            week,
-            total_predictions,
-            correct_predictions,
-            accuracy_pct,
-            spread_3pt_accuracy,
-            spread_7pt_accuracy,
-            avg_margin_error,
-            high_conf_total,
-            high_conf_correct,
-            calculated_date
-        FROM weekly_accuracy
-        WHERE season = %s
-        ORDER BY week
-    """, (st.session_state.current_season,))
-    
-    if accuracy_data:
-        df = pd.DataFrame(accuracy_data)
-        
-        df['high_conf_accuracy'] = df.apply(
-            lambda row: (row['high_conf_correct'] / row['high_conf_total'] * 100) 
-            if row['high_conf_total'] and row['high_conf_total'] > 0 else None,
-            axis=1
-        )
-        
-        col1, col2, col3, col4 = st.columns(4)
-        
-        total_correct = df['correct_predictions'].sum()
-        total_games = df['total_predictions'].sum()
-        overall_accuracy = (total_correct / total_games * 100) if total_games > 0 else 0
-        
-        with col1:
-            st.markdown(f"""
-            <div class="metric-card">
-                <div class="metric-value">{overall_accuracy:.1f}%</div>
-                <div class="metric-label">Overall Accuracy</div>
-                <div style="color: #94a3b8; font-size: 0.85rem; margin-top: 0.5rem;">
-                    {total_correct}-{total_games - total_correct}
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
-        
-        with col2:
-            avg_spread_3pt = df['spread_3pt_accuracy'].mean() if 'spread_3pt_accuracy' in df.columns else 0
-            st.markdown(f"""
-            <div class="metric-card">
-                <div class="metric-value">{avg_spread_3pt:.1f}%</div>
-                <div class="metric-label">Avg Spread (±3pts)</div>
-            </div>
-            """, unsafe_allow_html=True)
-        
-        with col3:
-            avg_margin = df['avg_margin_error'].mean() if 'avg_margin_error' in df.columns else 0
-            st.markdown(f"""
-            <div class="metric-card">
-                <div class="metric-value">{avg_margin:.1f}</div>
-                <div class="metric-label">Avg Margin Error</div>
-            </div>
-            """, unsafe_allow_html=True)
-        
-        with col4:
-            high_conf_total = df['high_conf_total'].sum()
-            high_conf_correct = df['high_conf_correct'].sum()
-            high_conf_acc = (high_conf_correct / high_conf_total * 100) if high_conf_total > 0 else 0
-            st.markdown(f"""
-            <div class="metric-card">
-                <div class="metric-value">{high_conf_acc:.1f}%</div>
-                <div class="metric-label">High Confidence</div>
-                <div style="color: #94a3b8; font-size: 0.85rem; margin-top: 0.5rem;">
-                    {high_conf_correct}-{high_conf_total - high_conf_correct if high_conf_total > 0 else 0}
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
-        
-        st.markdown("<br>", unsafe_allow_html=True)
-        
-        fig = go.Figure()
-        
-        fig.add_trace(go.Scatter(
-            x=df['week'],
-            y=df['accuracy_pct'],
-            mode='lines+markers',
-            name='Winner Accuracy',
-            line=dict(color='#4ade80', width=3),
-            marker=dict(size=10),
-        ))
-        
-        if 'spread_3pt_accuracy' in df.columns:
-            fig.add_trace(go.Scatter(
-                x=df['week'],
-                y=df['spread_3pt_accuracy'],
-                mode='lines+markers',
-                name='Spread (±3pts)',
-                line=dict(color='#f59e0b', width=2),
-                marker=dict(size=8),
-            ))
-        
-        fig.add_hline(y=overall_accuracy, line_dash="dot", line_color="rgba(255,255,255,0.3)")
-        
-        fig.update_layout(
-            title="Accuracy Trends",
-            xaxis_title="Week",
-            yaxis_title="Accuracy (%)",
-            plot_bgcolor='rgba(0,0,0,0)',
-            paper_bgcolor='rgba(0,0,0,0)',
-            font=dict(color='white'),
-            height=500
-        )
-        
-        st.plotly_chart(fig, use_container_width=True)
-    else:
-        st.info("No accuracy data available yet")
+    st.markdown('<div class="vault-eyebrow">performance</div>', unsafe_allow_html=True)
+    _es = load_predictor().ml_predictor.eval_stats
+    components.html(vault.performance_html(_es), height=vault.performance_height(), scrolling=False)
 
 with tab6:
-    st.markdown("<div class='section-header'>HOW IT WORKS</div>", unsafe_allow_html=True)
-    
-    faq_tab1, faq_tab2, faq_tab3 = st.tabs(["📊 Model", "💰 Strategy", "🎯 Accuracy"])
-    
-    with faq_tab1:
-        st.markdown(f"""
-        ### Machine Learning Component
-        - **Training Data**: 800+ NFL games (2022-2024)
-        - **Algorithm**: Random Forest Classifier
-        - **Current Accuracy**: {get_overall_accuracy_display()}
-        - **Updates**: Every Tuesday with new results
-        
-        ### Key Factors Analyzed
-        1. Team performance metrics (home/away splits)
-        2. Injury impact scores (position-weighted)
-        3. Historical matchups
-        4. Home field advantage (2.5 pts)
-        
-        ### Output
-        - Model Spread (our prediction)
-        - Win Probability
-        - Confidence Level (High/Medium/Low)
-        - Edge vs Vegas
-        """)
-    
-    with faq_tab2:
-        st.markdown("""
-        ### Understanding Edge
-        **Edge = Model Line - Vegas Line**
-        
-        - **Negative Edge**: Model favors home team MORE than Vegas
-        - **Positive Edge**: Model favors away team MORE than Vegas
-        
-        ### Edge Thresholds
-        - 🔥 **≥10 pts**: Best opportunities
-        - ⚡ **5-9 pts**: Good value
-        - ⚠️ **3-4 pts**: Minimum threshold
-        - ❌ **<3 pts**: Skip
-        
-        ### Bankroll Management
-        - 1 unit = 1-2% of bankroll
-        - HIGH confidence = 2-3 units
-        - MEDIUM confidence = 1-2 units
-        - LOW confidence = 0.5-1 unit
-        
-        **Never bet > 5% on single game**
-        """)
-    
-    with faq_tab3:
-        st.markdown(f"""
-        ### Performance Metrics
-        - **Model Accuracy**: {get_overall_accuracy_display()}
-        - **Breakeven Rate**: 52.4% (at -110 odds)
-        
-        ### Weekly Updates
-        1. Monday: Collect results
-        2. Tuesday: Retrain model
-        3. Wednesday: Update injuries
-        4. Thursday: Generate predictions
-        
-        ### Limitations
-        ⚠️ Past performance doesn't guarantee future results  
-        ⚠️ Variance exists week-to-week (60-75% range)  
-        ⚠️ Always bet responsibly  
-        
-        ### Data Sources
-        - NFL official statistics
-        - ESPN injury reports
-        - DraftKings betting lines
-        - 2022-2024 historical data
-        """)
+    components.html(vault.model_html(hero_accuracy, 'gridiron prophet'), height=vault.model_height(), scrolling=False)
 
 st.markdown("---")
 st.markdown(f"""
